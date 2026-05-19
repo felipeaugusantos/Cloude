@@ -221,14 +221,6 @@ function parseKpiRow_(row, hasSessionId, tz) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function getSheetData(ss, name) {
-  const sheet = ss.getSheetByName(name);
-  if (!sheet) return [];
-  const last = Math.min(sheet.getLastRow(), CONFIG.MAX_ROWS + 1);
-  if (last < 2) return [];
-  return sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).getValues();
-}
-
 function buildAllItems(ss) {
   const tz    = ss.getSpreadsheetTimeZone();
   const sheet = ss.getSheetByName(CONFIG.SHEET_GERAL);
@@ -500,14 +492,17 @@ function saveKPIDataManual(jsonString, origem) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
 
-  const ss        = SpreadsheetApp.getActiveSpreadsheet();
-  const tz        = ss.getSpreadsheetTimeZone();
-  const ts        = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
-  const sessionId = Utilities.getUuid();
-  const origemStr = origem || "MANUAL";
+  // Declare all vars before try so catch block can reference them for audit logging.
+  // Initialization happens inside try to keep lock always released via finally.
+  let ss, tz, ts, sessionId;
+  const origemStr   = origem || "MANUAL";
   let   hashPayload = "";
 
   try {
+    ss        = SpreadsheetApp.getActiveSpreadsheet();
+    tz        = ss.getSpreadsheetTimeZone();
+    ts        = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
+    sessionId = Utilities.getUuid();
     const data = JSON.parse(jsonString);
     if (!Array.isArray(data) || data.length === 0) throw new Error("JSON inválido ou vazio");
 
