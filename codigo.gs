@@ -60,6 +60,19 @@ const GERAL_COLUMNS = {
   }
 };
 
+// ─── Spreadsheet accessor ─────────────────────────────────────────────────────
+// Works for both container-bound and standalone scripts.
+// For standalone scripts, set SPREADSHEET_ID in Project Properties.
+function getSpreadsheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss) return ss;
+  const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
+  if (!id) throw new Error(
+    "Planilha não encontrada. Defina SPREADSHEET_ID nas Propriedades do Script."
+  );
+  return SpreadsheetApp.openById(id);
+}
+
 // ─── Numeric validation ───────────────────────────────────────────────────────
 function isValidNumberValue(v) {
   if (v === null || v === undefined) return false;
@@ -70,7 +83,7 @@ function isValidNumberValue(v) {
 // ─── Logging ──────────────────────────────────────────────────────────────────
 function logEvent_(nivel, origem, funcao, mensagem, detalhe) {
   try {
-    const ss  = SpreadsheetApp.getActiveSpreadsheet();
+    const ss  = getSpreadsheet_();
     const tz  = ss.getSpreadsheetTimeZone();
     const sht = ensureSheet_(ss, CONFIG.SHEET_LOG, LOG_HEADER);
     let usuario = "";
@@ -414,7 +427,7 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
 function getDashboardData(filtersJson) {
   try {
     const filters = filtersJson ? JSON.parse(filtersJson) : {};
-    const ss      = SpreadsheetApp.getActiveSpreadsheet();
+    const ss      = getSpreadsheet_();
     const tz      = ss.getSpreadsheetTimeZone();
     const today   = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd");
 
@@ -452,7 +465,7 @@ function getDashboardData(filtersJson) {
 function getTableData(page, filtersJson) {
   try {
     const filters = filtersJson ? JSON.parse(filtersJson) : {};
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = getSpreadsheet_();
     let items = applyFilters(buildAllItems(ss), filters);
     const sortCampo = filters.sortCampo || "dataOrigem";
     const sortDir   = filters.sortDir   || "desc";
@@ -471,7 +484,7 @@ function getTableData(page, filtersJson) {
 function exportCSVData(filtersJson) {
   try {
     const filters = filtersJson ? JSON.parse(filtersJson) : {};
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = getSpreadsheet_();
     let items = applyFilters(buildAllItems(ss), filters);
     const sortCampo = filters.sortCampo || "dataOrigem";
     const sortDir   = filters.sortDir   || "desc";
@@ -499,7 +512,7 @@ function saveKPIDataManual(jsonString, origem) {
   let   hashPayload = "";
 
   try {
-    ss        = SpreadsheetApp.getActiveSpreadsheet();
+    ss        = getSpreadsheet_();
     tz        = ss.getSpreadsheetTimeZone();
     ts        = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
     sessionId = Utilities.getUuid();
@@ -586,7 +599,7 @@ function saveKPIDataManual(jsonString, origem) {
 // ─── KPI History ──────────────────────────────────────────────────────────────
 function getKPIHistorySessions() {
   try {
-    const ss      = SpreadsheetApp.getActiveSpreadsheet();
+    const ss      = getSpreadsheet_();
     const tz      = ss.getSpreadsheetTimeZone();
     const sessions = [];
     const knownTs  = new Set();
@@ -645,7 +658,7 @@ function getKPIHistorySessions() {
 
 function getKPIDataBySession(identifier) {
   try {
-    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const ss    = getSpreadsheet_();
     const sheet = ss.getSheetByName(CONFIG.SHEET_KPI);
     if (!sheet || sheet.getLastRow() < 2) return { ok: true, data: [] };
     const tz = ss.getSpreadsheetTimeZone();
@@ -719,7 +732,7 @@ function getKPITrendData() {
     const sessRes = getKPIHistorySessions();
     if (!sessRes.ok || !sessRes.sessions.length) return { ok: true, trend: [] };
 
-    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const ss    = getSpreadsheet_();
     const sheet = ss.getSheetByName(CONFIG.SHEET_KPI);
     if (!sheet || sheet.getLastRow() < 2) return { ok: true, trend: [] };
     const tz = ss.getSpreadsheetTimeZone();
