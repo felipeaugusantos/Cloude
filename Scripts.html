@@ -1,0 +1,826 @@
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════════════════
+let charts         = {};
+let currentFilters = {};
+let currentPage    = 1;
+let filterTimer    = null;
+let sortState      = { campo: 'dataOrigem', dir: 'desc' };
+let tableRows      = [];
+let selectedRow    = null;
+let kpiAlertTimer  = null;
+let pendingKpiData = null;
+
+const INTERVALO_ALERTA = 2 * 60 * 60 * 1000;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Utilities
+// ═══════════════════════════════════════════════════════════════════════════
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function setText(id, val) { document.getElementById(id).textContent = val; }
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+function isValidNumericValue(v) {
+  if (v === null || v === undefined) return false;
+  if (typeof v === 'string' && v.trim() === '') return false;
+  return Number.isFinite(Number(v));
+}
+
+// ─── System message ──────────────────────────────────────────────────────────
+function showSystemMsg(type, msg) {
+  const el = document.getElementById('systemMsg');
+  if (!el) return;
+  el.innerHTML = '<div class="alert alert-' + type + ' alert-dismissible py-2 mb-0 fade show" role="alert">' +
+    esc(msg) +
+    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+}
+function clearSystemMsg() {
+  const el = document.getElementById('systemMsg');
+  if (el) el.innerHTML = '';
+}
+
+function showErr(msg) {
+  const loader = document.getElementById('globalLoader');
+  loader.innerHTML =
+    '<div class="text-center">' +
+    '<div class="text-danger fs-4 mb-2">⚠️</div>' +
+    '<div class="text-danger">' + esc(msg) + '</div>' +
+    '<button class="btn btn-sm btn-outline-secondary mt-3" onclick="fetchData()">Tentar novamente</button>' +
+    '</div>';
+  loader.style.display = 'flex';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  fetchData();
+  startKPIReminder();
+  setInterval(fetchData, 5 * 60 * 1000);
+});
+
+function resetLoader() {
+  const loader = document.getElementById('globalLoader');
+  loader.innerHTML = '<div class="spinner-border text-primary mb-3"></div><div class="text-muted">Carregando Dashboard...</div>';
+  loader.style.display = 'flex';
+}
+
+function fetchData() {
+  currentPage = 1;
+  resetLoader();
+  loadDashboard(currentFilters);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Dashboard
+// ═══════════════════════════════════════════════════════════════════════════
+function loadDashboard(filters) {
+  google.script.run
+    .withSuccessHandler(resp => {
+      document.getElementById('globalLoader').style.display = 'none';
+      if (!resp || !resp.ok) {
+        showErr('Erro ao carregar o dashboard — ' + (resp ? resp.error : 'Sem resposta do servidor'));
+        return;
+      }
+      clearSystemMsg();
+      renderAll(resp);
+      document.getElementById('lastUpdate').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
+    })
+    .withFailureHandler(err => {
+      document.getElementById('globalLoader').style.display = 'none';
+      showErr('Erro no servidor: ' + err.message);
+    })
+    .getDashboardData(JSON.stringify(filters));
+}
+
+function applyFilter() {
+  currentPage = 1;
+  currentFilters = {
+    cliente:    document.getElementById('fCliente').value,
+    dataInicio: document.getElementById('fDe').value,
+    dataFim:    document.getElementById('fAte').value,
+    revisao:    document.getElementById('fRevisao').value,
+    requisito:  document.getElementById('fRequisito').value,
+    sortCampo:  sortState.campo,
+    sortDir:    sortState.dir,
+  };
+  loadDashboard(currentFilters);
+}
+
+function scheduleFilter() {
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(applyFilter, 600);
+}
+
+function clearFilters() {
+  ['fCliente','fDe','fAte','fRevisao','fRequisito'].forEach(id => {
+    const el = document.getElementById(id);
+    el.tagName === 'SELECT' ? (el.selectedIndex = 0) : (el.value = '');
+  });
+  applyFilter();
+}
+
+function setSort(campo) {
+  if (sortState.campo === campo) {
+    sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortState.campo = campo;
+    sortState.dir = 'desc';
+  }
+  updateSortIcons();
+  applyFilter();
+}
+
+function updateSortIcons() {
+  document.querySelectorAll('.sort-icon').forEach(el => el.textContent = '');
+  const si = document.getElementById('si-' + sortState.campo);
+  if (si) si.textContent = sortState.dir === 'asc' ? '▲' : '▼';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Render All
+// ═══════════════════════════════════════════════════════════════════════════
+function renderAll(resp) {
+  const c = resp.cards;
+  setText('cTotal',      c.total);
+  setText('cHoje',       c.hoje);
+  setText('cSemCaminho', c.semCaminho);
+  setText('cMedia7',     c.media7d);
+  setText('cMedia30',    c.media30d);
+  setText('cClientes',   c.clientes);
+
+  ['fCliente', 'rFCliente'].forEach(id => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Todos</option>';
+    (resp.clientList || []).forEach(cli => {
+      const opt = document.createElement('option');
+      opt.value = cli; opt.textContent = cli;
+      if (cli === cur) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  });
+
+  renderDashCharts(resp.charts);
+  renderRelCharts(resp.charts, resp.reports);
+  renderTableData(resp.table.rows);
+  tableRows = resp.table.rows;
+  renderPaginacao(resp.table.page, resp.table.totalPages);
+  document.getElementById('tableCount').textContent = '(' + resp.table.totalRows + ' registros)';
+  updateSortIcons();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Charts — Dashboard
+// ═══════════════════════════════════════════════════════════════════════════
+function renderDashCharts(ch) {
+  destroyChart('chartCliHoje');
+  destroyChart('chartVersoesHoje');
+  document.querySelectorAll('.no-data-msg').forEach(el => el.remove());
+
+  if (ch.cliHoje.labels.length) {
+    charts.chartCliHoje = new Chart(document.getElementById('chartCliHoje'), {
+      type: 'bar',
+      data: { labels: ch.cliHoje.labels, datasets: [{ data: ch.cliHoje.data, backgroundColor: '#0d6efd', borderRadius: 4 }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+    });
+  } else {
+    const p = document.createElement('p');
+    p.className = 'text-muted small text-center mt-3 no-data-msg';
+    p.textContent = 'Nenhum dado hoje';
+    document.getElementById('chartCliHoje').parentElement.appendChild(p);
+  }
+
+  const vEntries  = Object.entries(ch.versoesHojeMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const totalHoje = vEntries.reduce((s,[,v])=>s+v, 0);
+  const vEl = document.getElementById('versoesTotalHoje');
+  if (vEl) vEl.textContent = totalHoje ? '(' + totalHoje + ' cópias)' : '';
+
+  if (vEntries.length) {
+    const colors = ['#0d6efd','#6610f2','#198754','#fd7e14','#dc3545','#0dcaf0','#20c997','#ffc107','#6f42c1','#d63384'];
+    charts.chartVersoesHoje = new Chart(document.getElementById('chartVersoesHoje'), {
+      type: 'bar',
+      data: {
+        labels: vEntries.map(([k]) => k),
+        datasets: [{ data: vEntries.map(([,v]) => v), backgroundColor: vEntries.map((_,i) => colors[i%colors.length]), borderRadius: 4 }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ' ' + ctx.raw + ' cópia(s)  —  ' + (totalHoje ? Math.round(ctx.raw*100/totalHoje) : 0) + '%' } } },
+        scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } }, y: { ticks: { font: { size: 11 } } } }
+      }
+    });
+  } else {
+    const p = document.createElement('p');
+    p.className = 'text-muted small text-center mt-3 no-data-msg';
+    p.textContent = 'Nenhuma versão hoje';
+    document.getElementById('chartVersoesHoje').parentElement.appendChild(p);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Charts — Relatórios
+// ═══════════════════════════════════════════════════════════════════════════
+function renderRelCharts(ch, r) {
+  document.getElementById('rTaxaRevisao').textContent =
+    r.taxaRevisaoGlobal !== undefined ? r.taxaRevisaoGlobal + '%' : '—%';
+  document.getElementById('rConcentracao').textContent = r.concentracao + '%';
+  document.getElementById('rUltimos7').childNodes[0].nodeValue = r.ultimos7 + ' ';
+  const tEl = document.getElementById('rTendencia7');
+  if (r.tendencia7 > 0)      { tEl.textContent = '▲'+r.tendencia7+'%'; tEl.className = 'trend-up'; }
+  else if (r.tendencia7 < 0) { tEl.textContent = '▼'+Math.abs(r.tendencia7)+'%'; tEl.className = 'trend-down'; }
+  else                       { tEl.textContent = '='; tEl.className = 'trend-eq'; }
+  const mesAtualIdx = r.mensal.labels.indexOf(r.mesAtualKey);
+  document.getElementById('rMesAtual').textContent = mesAtualIdx >= 0 ? r.mensal.data[mesAtualIdx] : 0;
+  document.getElementById('rSemCaminho').textContent = r.semCaminhoCount + ' (' + r.semCaminhoPerc + '%)';
+
+  destroyChart('chartMensal');
+  charts.chartMensal = new Chart(document.getElementById('chartMensal'), {
+    type: 'bar',
+    data: {
+      labels: r.mensal.labels.map(l => l.substring(5)),
+      datasets: [{ label: 'Cópias', data: r.mensal.data,
+        backgroundColor: r.mensal.data.map((_,i,a) => i===a.length-1?'#0d6efd':'#adb5bd'), borderRadius: 4 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+
+  destroyChart('chartSemana');
+  const DAY_ORDER = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  charts.chartSemana = new Chart(document.getElementById('chartSemana'), {
+    type: 'bar',
+    data: { labels: DAY_ORDER, datasets: [{ data: DAY_ORDER.map(k => ch.weekMap[k]||0), backgroundColor: '#6610f2', borderRadius: 4 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+
+  destroyChart('chartTendencia');
+  const trendY = ch.trend30.data, trendLine = calcTrendLine(trendY);
+  charts.chartTendencia = new Chart(document.getElementById('chartTendencia'), {
+    type: 'line',
+    data: {
+      labels: ch.trend30.labels,
+      datasets: [
+        { label: 'Cópias', data: trendY, fill: true, tension: .3, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.08)', pointRadius: 2 },
+        { label: 'Tendência', data: trendLine, type: 'line', borderColor: '#dc3545', borderDash: [6,3], pointRadius: 0, tension: 0 },
+      ]
+    },
+    options: { plugins: { legend: { labels: { font: { size: 10 } } } }, scales: { y: { beginAtZero: true } } }
+  });
+
+  destroyChart('chartPareto');
+  charts.chartPareto = new Chart(document.getElementById('chartPareto'), {
+    type: 'bar',
+    data: {
+      labels: r.pareto.labels,
+      datasets: [
+        { label: 'Qtd', data: r.pareto.data, backgroundColor: '#0d6efd', borderRadius: 4, yAxisID: 'y' },
+        { label: '% Acum.', data: r.pareto.cumulative, type: 'line', borderColor: '#fd7e14', pointRadius: 3, tension: .3, yAxisID: 'y2' },
+        { label: '80%', data: r.pareto.labels.map(()=>80), type: 'line', borderColor: '#dc3545', borderDash: [5,3], pointRadius: 0, yAxisID: 'y2' },
+      ]
+    },
+    options: {
+      plugins: { legend: { labels: { font: { size: 10 } } } },
+      scales: {
+        y:  { beginAtZero: true, position: 'left' },
+        y2: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v+'%' } },
+      }
+    }
+  });
+
+  destroyChart('chartTop10');
+  charts.chartTop10 = new Chart(document.getElementById('chartTop10'), {
+    type: 'bar',
+    data: { labels: ch.top10.labels, datasets: [{ data: ch.top10.data, backgroundColor: '#198754', borderRadius: 4 }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+  });
+
+  destroyChart('chartTopRevisoes');
+  charts.chartTopRevisoes = new Chart(document.getElementById('chartTopRevisoes'), {
+    type: 'bar',
+    data: {
+      labels: r.topRevisoes.labels,
+      datasets: [{ data: r.topRevisoes.data,
+        backgroundColor: r.topRevisoes.data.map(v => v>=10?'#dc3545':v>=5?'#ffc107':'#198754'), borderRadius: 4 }]
+    },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+  });
+}
+
+function calcTrendLine(y) {
+  const n = y.length;
+  if (!n) return [];
+  const sx = y.reduce((_,__,i)=>_+i,0), sy = y.reduce((a,b)=>a+b,0);
+  const sxx = y.reduce((_,__,i)=>_+i*i,0), sxy = y.reduce((a,b,i)=>a+i*b,0);
+  const d = n*sxx - sx*sx;
+  if (!d) return y.map(()=>sy/n);
+  const m = (n*sxy-sx*sy)/d, b = (sy-m*sx)/n;
+  return y.map((_,i)=>Math.max(0,Math.round(m*i+b)));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Table
+// ═══════════════════════════════════════════════════════════════════════════
+function renderTableData(rows) {
+  tableRows = rows;
+  const tbody = document.getElementById('mainTbody');
+  tbody.innerHTML = '';
+  rows.forEach((row, idx) => {
+    const sem = !row.caminho || !row.caminho.trim();
+    const tr  = document.createElement('tr');
+    tr.className = sem ? 'sem-caminho-row' : '';
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => openModal(idx);
+    tr.innerHTML =
+      '<td>' + row.dataExibicao + '</td>' +
+      '<td><code class="small">' + esc(row.versao) + '</code></td>' +
+      '<td>' + esc(row.requisito) + '</td>' +
+      '<td>' + esc(row.cliente) + '</td>' +
+      '<td>' + statusBadge(row.status) + '</td>' +
+      '<td class="text-truncate" style="max-width:180px" title="' + esc(row.caminho) + '">' +
+        (esc(row.caminho) || '<span class="text-danger small">⚠ sem caminho</span>') + '</td>' +
+      '<td>' + esc(row.revisao) + '</td>' +
+      '<td><button class="btn-copy" onclick="copyMsg(' + idx + ');event.stopPropagation()" title="Copiar mensagem">📋</button></td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function statusBadge(s) {
+  const map = { 'Liberado':'success','Pendente':'warning','Cancelado':'danger','Em Análise':'info' };
+  return '<span class="badge text-bg-' + (map[s]||'secondary') + ' badge-status">' + esc(s||'—') + '</span>';
+}
+
+function applyQuickFilter() {
+  const q = document.getElementById('quickFilter').value.toLowerCase().trim();
+  document.getElementById('mainTbody').querySelectorAll('tr').forEach(tr => {
+    tr.style.display = (!q || tr.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
+}
+
+function loadPage(page) {
+  currentPage = page;
+  const f = Object.assign({}, currentFilters, { sortCampo: sortState.campo, sortDir: sortState.dir });
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (!resp || !resp.ok) {
+        showSystemMsg('danger', 'Erro ao carregar página: ' + (resp ? resp.error : 'sem resposta'));
+        return;
+      }
+      clearSystemMsg();
+      renderTableData(resp.rows);
+      renderPaginacao(resp.page, resp.totalPages);
+      document.getElementById('tableCount').textContent = '(' + resp.totalRows + ' registros)';
+    })
+    .withFailureHandler(err => showSystemMsg('danger', 'Erro ao carregar página: ' + err.message))
+    .getTableData(page, JSON.stringify(f));
+}
+
+function renderPaginacao(atual, total) {
+  const nav = document.getElementById('paginacao');
+  if (total <= 1) { nav.innerHTML = ''; return; }
+  const ul = document.createElement('ul');
+  ul.className = 'pagination pagination-sm mb-0';
+
+  const mkItem = (label, page, disabled, active) => {
+    const li = document.createElement('li');
+    li.className = 'page-item' + (disabled?' disabled':'') + (active?' active':'');
+    const a = document.createElement('a');
+    a.className = 'page-link'; a.href = '#'; a.textContent = label;
+    if (!disabled && !active) a.onclick = e => { e.preventDefault(); loadPage(page); };
+    li.appendChild(a); ul.appendChild(li);
+  };
+
+  mkItem('«', atual-1, atual===1);
+  const range = (s,e) => { for(let i=s;i<=e;i++) mkItem(i,i,false,i===atual); };
+  if (total <= 7) range(1,total);
+  else if (atual <= 4) { range(1,5); mkItem('…',null,true); mkItem(total,total,false,false); }
+  else if (atual >= total-3) { mkItem(1,1,false,false); mkItem('…',null,true); range(total-4,total); }
+  else { mkItem(1,1,false,false); mkItem('…',null,true); range(atual-1,atual+1); mkItem('…',null,true); mkItem(total,total,false,false); }
+  mkItem('»', atual+1, atual===total);
+
+  nav.innerHTML = ''; nav.appendChild(ul);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Modal & Copy
+// ═══════════════════════════════════════════════════════════════════════════
+function openModal(idx) {
+  selectedRow = tableRows[idx];
+  const r = selectedRow;
+  document.getElementById('modalBody').innerHTML =
+    '<div class="row g-2">' +
+    '<div class="col-6"><small class="text-muted d-block">Data</small><strong>' + esc(r.dataExibicao) + '</strong></div>' +
+    '<div class="col-6"><small class="text-muted d-block">Status</small>' + statusBadge(r.status) + '</div>' +
+    '<div class="col-6"><small class="text-muted d-block">Versão</small><code>' + esc(r.versao) + '</code></div>' +
+    '<div class="col-6"><small class="text-muted d-block">Revisão</small>' + (esc(r.revisao)||'—') + '</div>' +
+    '<div class="col-12"><small class="text-muted d-block">Requisito</small>' + (esc(r.requisito)||'—') + '</div>' +
+    '<div class="col-12"><small class="text-muted d-block">Cliente</small>' + esc(r.cliente) + '</div>' +
+    '<div class="col-12"><small class="text-muted d-block">Caminho</small>' +
+      (r.caminho && r.caminho.trim()
+        ? '<code class="small">' + esc(r.caminho) + '</code>'
+        : '<span class="badge text-bg-danger">⚠ Sem Caminho</span>') +
+    '</div></div>';
+  new bootstrap.Modal(document.getElementById('detailModal')).show();
+}
+
+function buildMsg(r) {
+  const linhas = ['Copia ' + r.versao + ' - Liberado no modem'];
+  if (r.requisito && r.requisito.trim()) linhas.push('Requisito: ' + r.requisito);
+  if (r.revisao   && r.revisao.trim())   linhas.push('Revisão: ' + r.revisao);
+  linhas.push('Caminho: ' + (r.caminho || 'N/A'));
+  return linhas.join('\n');
+}
+
+function copyMsg(idx) {
+  navigator.clipboard.writeText(buildMsg(tableRows[idx])).then(showToast).catch(() => {});
+}
+function copyMsgFromModal() {
+  if (!selectedRow) return;
+  navigator.clipboard.writeText(buildMsg(selectedRow)).then(showToast).catch(() => {});
+}
+function showToast() {
+  new bootstrap.Toast(document.getElementById('copyToast'), { delay: 2500 }).show();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CSV Export
+// ═══════════════════════════════════════════════════════════════════════════
+function exportCSV() {
+  const f = Object.assign({}, currentFilters, { sortCampo: sortState.campo, sortDir: sortState.dir });
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (!resp || !resp.ok) {
+        showSystemMsg('danger', 'Erro ao exportar CSV: ' + (resp ? resp.error : 'sem resposta'));
+        return;
+      }
+      const blob = new Blob(['﻿' + resp.csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = 'copias_' + new Date().toISOString().substring(0,10) + '.csv';
+      a.click(); URL.revokeObjectURL(url);
+    })
+    .withFailureHandler(err => showSystemMsg('danger', 'Erro ao exportar CSV: ' + err.message))
+    .exportCSVData(JSON.stringify(f));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// KPI Tab
+// ═══════════════════════════════════════════════════════════════════════════
+function renderKpiResp(resp) {
+  if (!resp || !resp.ok) {
+    showSystemMsg('warning', 'Erro ao carregar KPI: ' + (resp ? resp.error : 'sem resposta'));
+    return;
+  }
+  clearSystemMsg();
+  const data = resp.data || [];
+  renderKPITableData(data);
+  renderSessionList(resp.sessions || []);
+  updateKpiSummaryCards(data);
+  destroyChart('chartKpiStack');
+  destroyChart('chartKpiTrend');
+  renderKPIStackChart(data);
+  if (resp.session) {
+    document.getElementById('kpiSessionLabel').textContent = 'Sessão: ' + fmtTs(resp.session);
+    document.getElementById('kpiSessionTime').textContent  = fmtTs(resp.session);
+  }
+  loadKpiTrendChart();
+}
+
+function loadKpiData() {
+  google.script.run
+    .withSuccessHandler(renderKpiResp)
+    .withFailureHandler(err => showSystemMsg('danger', 'Erro ao carregar KPI: ' + err.message))
+    .getLastKPI();
+}
+
+function fmtTs(ts) {
+  if (!ts || ts.length < 16) return ts || '';
+  const [date, time] = ts.split(' ');
+  const [y, m, d]    = date.split('-');
+  return d + '/' + m + '/' + y + ' ' + time.substring(0,5);
+}
+
+function renderSessionList(sessions) {
+  const el = document.getElementById('sessionList');
+  if (!sessions.length) { el.innerHTML = '<p class="text-muted small">Sem histórico</p>'; return; }
+  el.innerHTML = sessions.map((s, i) => {
+    const statusBadgeHtml = (s.status && s.status !== 'SUCESSO')
+      ? '<span class="badge bg-danger ms-1">ERRO</span>'
+      : '<span class="badge bg-secondary ms-1">' + (s.count||0) + ' reg.</span>';
+    const origemTag = (s.origem && s.origem !== 'LEGADO' && s.origem !== 'MANUAL')
+      ? '<span class="badge bg-info text-dark ms-1" style="font-size:.6rem">' + esc(s.origem) + '</span>'
+      : (s.origem === 'LEGADO' ? '<span class="badge bg-secondary ms-1" style="font-size:.6rem;opacity:.6">legado</span>' : '');
+    const parts = fmtTs(s.ts).split(' ');
+    return '<div class="session-item ' + (i===0?'active':'') + '" ' +
+      'data-sid="' + esc(s.id||s.ts) + '" data-ts="' + esc(s.ts) + '" onclick="viewSessionEl(this)">' +
+      '<span class="d-flex flex-column" style="line-height:1.2">' +
+        '<span>' + (parts[0]||'') + origemTag + '</span>' +
+        '<small class="text-muted" style="font-size:.7rem">' + (parts[1]||'') + '</small>' +
+      '</span>' + statusBadgeHtml + '</div>';
+  }).join('');
+}
+
+function viewSessionEl(el) {
+  document.querySelectorAll('.session-item').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  const sid = el.dataset.sid;
+  const ts  = el.dataset.ts;
+  document.getElementById('kpiSessionLabel').textContent = 'Sessão: ' + fmtTs(ts);
+  document.getElementById('kpiSessionTime').textContent  = fmtTs(ts);
+
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (!resp || !resp.ok) {
+        showSystemMsg('warning', 'Erro ao carregar sessão KPI: ' + (resp ? resp.error : 'sem resposta'));
+        return;
+      }
+      clearSystemMsg();
+      renderKPITableData(resp.data || []);
+      updateKpiSummaryCards(resp.data || []);
+      renderKPIStackChart(resp.data || []);
+    })
+    .withFailureHandler(err => showSystemMsg('danger', 'Erro ao carregar sessão KPI: ' + err.message))
+    .getKPIDataBySession(sid);
+}
+
+function updateKpiSummaryCards(data) {
+  const tg = data.find(r => r.ALT_VERSAO === 'TOTAL GERAL');
+  if (!tg) return;
+  document.getElementById('kpiTotal').textContent     = tg.TOTAL || '—';
+  document.getElementById('kpiConferido').textContent = (tg.KPI_CONFERIDO != null ? tg.KPI_CONFERIDO.toFixed(1) : '—') + '%';
+  document.getElementById('kpiAbeAnd').textContent    = (tg.KPI_ABERTA_ANDAMENTO != null ? tg.KPI_ABERTA_ANDAMENTO.toFixed(1) : '—') + '%';
+  document.getElementById('kpiCorrCorrd').textContent = (tg.KPI_CORRIGINDO_CORRIGIDO != null ? tg.KPI_CORRIGINDO_CORRIGIDO.toFixed(1) : '—') + '%';
+}
+
+function renderKPITableData(data) {
+  const version_rows = data.filter(r => r.ALT_VERSAO !== 'TOTAL GERAL');
+  const total_row    = data.find(r => r.ALT_VERSAO === 'TOTAL GERAL');
+  const tbody = document.getElementById('kpiTBody');
+  const tfoot = document.getElementById('kpiTFoot');
+
+  function kpiBar(val, sem) {
+    if (val == null) return '—';
+    const v     = sem ? sem.toLowerCase() : '';
+    const color = v.includes('verde') ? 'success' : v.includes('amarelo') ? 'warning' : 'danger';
+    return '<div class="d-flex align-items-center gap-1" style="min-width:90px">' +
+      '<div class="progress flex-grow-1" title="' + val.toFixed(1) + '%">' +
+        '<div class="progress-bar bg-' + color + '" style="width:' + Math.min(100,val) + '%"></div>' +
+      '</div><small>' + val.toFixed(1) + '%</small></div>';
+  }
+
+  function makeRow(r) {
+    const hasCorrCorrd = r.KPI_CORRIGINDO_CORRIGIDO != null;
+    return '<tr>' +
+      '<td><strong>' + esc(r.ALT_VERSAO) + '</strong></td>' +
+      '<td>' + r.ABERTA + '</td><td>' + r.ANDAMENTO + '</td>' +
+      '<td>' + r.CORRIGINDO + '</td><td>' + r.CORRIGIDO + '</td>' +
+      '<td>' + r.CONFERIDO + '</td><td>' + r.TOTAL + '</td>' +
+      '<td>' + kpiBar(r.KPI_ABERTA_ANDAMENTO, r.SEMAFORO_ABERTA_ANDAMENTO) + '</td>' +
+      '<td>' + (hasCorrCorrd ? kpiBar(r.KPI_CORRIGINDO_CORRIGIDO, r.SEMAFORO_CORRIGINDO_CORRIGIDO) : '<span class="text-muted small">N/D</span>') + '</td>' +
+      '<td>' + kpiBar(r.KPI_CONFERIDO, r.SEMAFORO_CONFERIDO) + '</td>' +
+    '</tr>';
+  }
+
+  tbody.innerHTML = version_rows.map(makeRow).join('');
+  tfoot.innerHTML = total_row ? '<tr>' + makeRow(total_row).replace(/^<tr>/,'').replace(/<\/tr>$/,'') + '</tr>' : '';
+}
+
+function renderKPIStackChart(data) {
+  destroyChart('chartKpiStack');
+  const rows = data.filter(r => r.ALT_VERSAO !== 'TOTAL GERAL');
+  if (!rows.length) return;
+  charts.chartKpiStack = new Chart(document.getElementById('chartKpiStack'), {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.ALT_VERSAO),
+      datasets: [
+        { label: 'Aberta',     data: rows.map(r=>r.ABERTA),     backgroundColor: '#dc3545' },
+        { label: 'Andamento',  data: rows.map(r=>r.ANDAMENTO),  backgroundColor: '#fd7e14' },
+        { label: 'Corrigindo', data: rows.map(r=>r.CORRIGINDO), backgroundColor: '#ffc107' },
+        { label: 'Corrigido',  data: rows.map(r=>r.CORRIGIDO),  backgroundColor: '#0dcaf0' },
+        { label: 'Conferido',  data: rows.map(r=>r.CONFERIDO),  backgroundColor: '#198754' },
+      ]
+    },
+    options: {
+      plugins: { legend: { position: 'top', labels: { font: { size: 10 } } } },
+      scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
+    }
+  });
+}
+
+function loadKpiTrendChart() {
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (!resp || !resp.ok || !resp.trend.length) return;
+      destroyChart('chartKpiTrend');
+      const labels = resp.trend.map(t => t.ts.substring(5,16));
+      charts.chartKpiTrend = new Chart(document.getElementById('chartKpiTrend'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: '% Conferido', data: resp.trend.map(t=>t.conferidoPerc),
+              borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.1)', tension: .3, fill: true, pointRadius: 4 },
+            { label: '% Abe+And', data: resp.trend.map(t=>t.abeAndPerc),
+              borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,.1)', tension: .3, fill: true, pointRadius: 4 },
+            { label: '% Corr+Corrd', data: resp.trend.map(t=>t.corrCorrPerc),
+              borderColor: '#6610f2', backgroundColor: 'rgba(102,16,242,.05)', tension: .3, fill: false, pointRadius: 4, borderDash: [4,3] },
+          ]
+        },
+        options: {
+          plugins: { legend: { labels: { font: { size: 10 } } } },
+          scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v+'%' } } }
+        }
+      });
+    })
+    .withFailureHandler(err => showSystemMsg('warning', 'Erro ao carregar tendência KPI: ' + err.message))
+    .getKPITrendData();
+}
+
+// ─── KPI JSON Validation ──────────────────────────────────────────────────────
+const REQUIRED_FIELDS = [
+  'ALT_VERSAO','ABERTA','ANDAMENTO','CORRIGINDO','CORRIGIDO','CONFERIDO','TOTAL',
+  'KPI_ABERTA_ANDAMENTO','KPI_CORRIGINDO_CORRIGIDO','KPI_CONFERIDO',
+  'SEMAFORO_ABERTA_ANDAMENTO','SEMAFORO_CORRIGINDO_CORRIGIDO','SEMAFORO_CONFERIDO'
+];
+const NUMERIC_FIELDS = [
+  'ABERTA','ANDAMENTO','CORRIGINDO','CORRIGIDO','CONFERIDO','TOTAL',
+  'KPI_ABERTA_ANDAMENTO','KPI_CORRIGINDO_CORRIGIDO','KPI_CONFERIDO'
+];
+
+function validarJSON() {
+  const raw     = document.getElementById('kpiJson').value.trim();
+  const errDiv  = document.getElementById('kpiValidErrors');
+  const infoDiv = document.getElementById('kpiValidInfo');
+  const headEl  = document.getElementById('jsonPreviewHead');
+  const bodyEl  = document.getElementById('jsonPreviewBody');
+  const btnConf = document.getElementById('btnConfirmSave');
+
+  errDiv.classList.add('d-none'); errDiv.innerHTML = '';
+  infoDiv.classList.add('d-none');
+  headEl.innerHTML = ''; bodyEl.innerHTML = '';
+  btnConf.disabled = true;
+
+  if (!raw) { alert('Cole o JSON antes de validar.'); return; }
+
+  let data;
+  try { data = JSON.parse(raw); }
+  catch(e) { showKpiError('JSON malformado: ' + e.message); return; }
+
+  if (!Array.isArray(data)) { showKpiError('O JSON deve ser um array de objetos.'); return; }
+  if (!data.length)         { showKpiError('Array vazio.'); return; }
+
+  const errors = [];
+  data.forEach((item, i) => {
+    const label   = item.ALT_VERSAO || '?';
+    const missing = REQUIRED_FIELDS.filter(f => item[f] === undefined || item[f] === null);
+    if (missing.length)
+      errors.push('Item ' + (i+1) + ' (' + label + '): campos ausentes — ' + missing.join(', '));
+    NUMERIC_FIELDS.forEach(f => {
+      if (item[f] !== undefined && item[f] !== null && !isValidNumericValue(item[f]))
+        errors.push('Item ' + (i+1) + ' (' + label + '): "' + f + '" valor inválido (recebido: "' + item[f] + '")');
+    });
+  });
+
+  if (errors.length) {
+    showKpiError('<ul class="mb-0">' + errors.map(e => '<li>' + esc(e) + '</li>').join('') + '</ul>');
+    return;
+  }
+
+  const cols = ['ALT_VERSAO','ABERTA','ANDAMENTO','CORRIGINDO','CORRIGIDO','CONFERIDO','TOTAL',
+                'KPI_ABERTA_ANDAMENTO','KPI_CORRIGINDO_CORRIGIDO','KPI_CONFERIDO',
+                'SEMAFORO_ABERTA_ANDAMENTO','SEMAFORO_CORRIGINDO_CORRIGIDO','SEMAFORO_CONFERIDO'];
+
+  headEl.innerHTML = '<tr>' + cols.map(c => '<th>' + c + '</th>').join('') + '</tr>';
+  bodyEl.innerHTML = data.map(r =>
+    '<tr>' + cols.map(c => {
+      const v = r[c];
+      if (v === undefined || v === null) return '<td class="text-muted">—</td>';
+      if (typeof v === 'string' && v.toLowerCase().includes('verde'))    return '<td class="sem-verde">'    + esc(v) + '</td>';
+      if (typeof v === 'string' && v.toLowerCase().includes('amarelo'))  return '<td class="sem-amarelo">'  + esc(v) + '</td>';
+      if (typeof v === 'string' && v.toLowerCase().includes('vermelho')) return '<td class="sem-vermelho">' + esc(v) + '</td>';
+      return '<td>' + esc(String(v)) + '</td>';
+    }).join('') + '</tr>'
+  ).join('');
+
+  infoDiv.textContent = '✅ JSON válido — ' + data.length + ' registro(s) prontos para importação.';
+  infoDiv.classList.remove('d-none');
+  btnConf.disabled = false;
+  pendingKpiData   = data;
+  new bootstrap.Modal(document.getElementById('kpiValidModal')).show();
+}
+
+function showKpiError(html) {
+  const errDiv = document.getElementById('kpiValidErrors');
+  errDiv.innerHTML = html;
+  errDiv.classList.remove('d-none');
+  new bootstrap.Modal(document.getElementById('kpiValidModal')).show();
+}
+
+function confirmarSalvar() {
+  if (!pendingKpiData) return;
+  const btnConf = document.getElementById('btnConfirmSave');
+  btnConf.disabled = true;
+  btnConf.textContent = 'Salvando...';
+
+  function fecharModal() {
+    try { const m = bootstrap.Modal.getInstance(document.getElementById('kpiValidModal')); if (m) m.hide(); } catch(e) {}
+  }
+
+  google.script.run
+    .withSuccessHandler(resp => {
+      fecharModal();
+      btnConf.disabled = false; btnConf.textContent = '✅ Confirmar e Salvar';
+      if (!resp || !resp.ok) {
+        document.getElementById('kpiImportMsg').innerHTML =
+          '<span class="text-danger">❌ ' + esc(resp ? resp.error : 'Erro ao salvar') + '</span>';
+        return;
+      }
+      document.getElementById('kpiJson').value = '';
+      const sidShort = resp.sessionId ? ' · ID: ' + resp.sessionId.substring(0,8) + '…' : '';
+      document.getElementById('kpiImportMsg').innerHTML =
+        '<span class="text-success">✅ ' + resp.saved + ' registros salvos em ' + fmtTs(resp.timestamp) + sidShort + '</span>';
+      dispensarAlerta();
+      pendingKpiData = null;
+      loadKpiData();
+    })
+    .withFailureHandler(err => {
+      fecharModal();
+      btnConf.disabled = false; btnConf.textContent = '✅ Confirmar e Salvar';
+      document.getElementById('kpiImportMsg').innerHTML =
+        '<span class="text-danger">❌ ' + esc(err.message || 'Erro de conexão') + '</span>';
+    })
+    .saveKPIDataManual(JSON.stringify(pendingKpiData));
+}
+
+function limparTextarea() {
+  document.getElementById('kpiJson').value = '';
+  document.getElementById('kpiImportMsg').innerHTML = '';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// KPI 2-hour Reminder
+// ═══════════════════════════════════════════════════════════════════════════
+function startKPIReminder() {
+  kpiAlertTimer = setInterval(mostrarAlertaKPI, INTERVALO_ALERTA);
+}
+function mostrarAlertaKPI() { document.getElementById('kpiAlert').classList.add('show'); }
+function dispensarAlerta() {
+  document.getElementById('kpiAlert').classList.remove('show');
+  clearInterval(kpiAlertTimer);
+  startKPIReminder();
+}
+function irParaKPI() {
+  dispensarAlerta();
+  const kpiBtn = document.querySelector('[data-bs-target="#tabKpi"]');
+  if (kpiBtn) new bootstrap.Tab(kpiBtn).show();
+}
+
+document.querySelector('[data-bs-target="#tabKpi"]')
+  .addEventListener('shown.bs.tab', () => { loadKpiData(); });
+
+// ─── Relatórios filter ────────────────────────────────────────────────────────
+let relFilterTimer = null;
+function scheduleRelFilter() { clearTimeout(relFilterTimer); relFilterTimer = setTimeout(applyRelFilter, 600); }
+
+function applyRelFilter() {
+  const filters = {
+    cliente:    document.getElementById('rFCliente').value,
+    dataInicio: document.getElementById('rFDe').value,
+    dataFim:    document.getElementById('rFAte').value,
+    sortCampo:  sortState.campo,
+    sortDir:    sortState.dir,
+  };
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (!resp || !resp.ok) {
+        showSystemMsg('warning', 'Erro ao filtrar relatórios: ' + (resp ? resp.error : 'sem resposta'));
+        return;
+      }
+      clearSystemMsg();
+      renderRelCharts(resp.charts, resp.reports);
+    })
+    .withFailureHandler(err => showSystemMsg('danger', 'Erro ao filtrar relatórios: ' + err.message))
+    .getDashboardData(JSON.stringify(filters));
+}
+
+function clearRelFilters() {
+  ['rFCliente','rFDe','rFAte'].forEach(id => {
+    const el = document.getElementById(id);
+    el.tagName === 'SELECT' ? (el.selectedIndex = 0) : (el.value = '');
+  });
+  applyRelFilter();
+}
+
+// ─── KPI version filter ───────────────────────────────────────────────────────
+function applyKpiVersionFilter() {
+  const q = document.getElementById('kpiVersionFilter').value.toLowerCase().trim();
+  document.querySelectorAll('#kpiTBody tr').forEach(tr => {
+    tr.style.display = (!q || tr.cells[0].textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
+}
+</script>

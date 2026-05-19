@@ -1,47 +1,139 @@
+// ─── Constants ────────────────────────────────────────────────────────────────
 const CONFIG = {
-  SHEET_GERAL: "Geral",
-  SHEET_KPI:   "KPI_Historico",
-  MAX_ROWS:    10000,
-  PAGE_SIZE:   100,
-  // POST_SECRET é lido via Arquivo → Propriedades do projeto (PropertiesService).
-  // Defina a propriedade de script "POST_SECRET" com o mesmo valor usado em kpi_sync.py.
+  SHEET_GERAL:   "Geral",
+  SHEET_KPI:     "KPI_Historico",
+  SHEET_SESSOES: "KPI_Sessoes",
+  SHEET_LOG:     "SYS_LOG",
+  MAX_ROWS:      10000,
+  PAGE_SIZE:     100,
+  // POST_SECRET: defina em Arquivo → Propriedades do projeto (PropertiesService).
 };
 
-// 14-column KPI schema (ordem e nomes são contrato público com o frontend)
+// Novo schema de 15 colunas (SESSION_ID na posição 0)
 const KPI_HEADER = [
-  "TIMESTAMP","ALT_VERSAO","ABERTA","ANDAMENTO","CORRIGINDO","CORRIGIDO",
+  "SESSION_ID","TIMESTAMP","ALT_VERSAO","ABERTA","ANDAMENTO","CORRIGINDO","CORRIGIDO",
   "CONFERIDO","TOTAL","KPI_ABERTA_ANDAMENTO","KPI_CORRIGINDO_CORRIGIDO",
   "KPI_CONFERIDO","SEMAFORO_ABERTA_ANDAMENTO","SEMAFORO_CORRIGINDO_CORRIGIDO",
   "SEMAFORO_CONFERIDO"
 ];
 
-// Campos que devem ser números; zero é válido, "abc" não é
 const KPI_NUMERIC_FIELDS = [
   "ABERTA","ANDAMENTO","CORRIGINDO","CORRIGIDO","CONFERIDO","TOTAL",
   "KPI_ABERTA_ANDAMENTO","KPI_CORRIGINDO_CORRIGIDO","KPI_CONFERIDO"
 ];
 
-// ─── Entry points ────────────────────────────────────────────────────────────
+const LOG_HEADER     = ["TIMESTAMP","NIVEL","ORIGEM","FUNCAO","MENSAGEM","DETALHE","USUARIO"];
+const SESSOES_HEADER = ["SESSION_ID","TIMESTAMP","TOTAL_REGISTROS","ORIGEM","STATUS","ERRO","HASH_PAYLOAD"];
+
+// Mapeamento explícito de colunas da aba Geral
+const GERAL_COLUMNS = {
+  data: {
+    required: true, fallback: 0,
+    names: ["data_liberacao","data liberacao","data liberação","dt_liberacao",
+            "dt liberacao","dt liberação","data_origem","data origem",
+            "data_lib","data_","dt_","data","date","dt"]
+  },
+  versao: {
+    required: true, fallback: 1,
+    names: ["alt_versao","versao_alt","alt versao","versao alt","versao","version","ver_"]
+  },
+  requisito: {
+    required: false, fallback: 2,
+    names: ["nr_requisito","num_requisito","nr requisito","num requisito","requisito","requirement","req_"]
+  },
+  cliente: {
+    required: true, fallback: 3,
+    names: ["nm_cliente","nome_cliente","nm cliente","nome cliente","cliente","client","customer"]
+  },
+  status: {
+    required: false, fallback: 5,
+    names: ["ds_status","ds status","status","situacao","situação","state"]
+  },
+  caminho: {
+    required: false, fallback: 7,
+    names: ["caminho_rede","caminho_completo","caminho rede","caminho completo",
+            "caminho","path","diretorio","diretório","dir_"]
+  },
+  revisao: {
+    required: false, fallback: 8,
+    names: ["nr_revisao","num_revisao","nr revisao","num revisao","revisao","revisão","revision","rev_"]
+  }
+};
+
+// ─── Numeric validation ───────────────────────────────────────────────────────
+function isValidNumberValue(v) {
+  if (v === null || v === undefined) return false;
+  if (typeof v === "string" && v.trim() === "") return false;
+  return Number.isFinite(Number(v));
+}
+
+// ─── Logging ──────────────────────────────────────────────────────────────────
+function logEvent_(nivel, origem, funcao, mensagem, detalhe) {
+  try {
+    const ss  = SpreadsheetApp.getActiveSpreadsheet();
+    const tz  = ss.getSpreadsheetTimeZone();
+    const sht = ensureSheet_(ss, CONFIG.SHEET_LOG, LOG_HEADER);
+    let usuario = "";
+    try { usuario = Session.getActiveUser().getEmail() || ""; } catch(e) {}
+    const ts = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
+    sht.appendRow([ts, nivel || "INFO", origem || "", funcao || "",
+                   mensagem || "", String(detalhe || "").substring(0, 500), usuario]);
+  } catch(e) { /* never let log failure break main flow */ }
+}
+
+// ─── Sheet helpers ────────────────────────────────────────────────────────────
+function ensureSheet_(ss, name, header) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, header.length).setValues([header]);
+    try { sheet.setFrozenRows(1); } catch(e) {}
+  }
+  return sheet;
+}
+
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+// ─── Entry points ─────────────────────────────────────────────────────────────
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile("Index")
+  return HtmlService.createTemplateFromFile("Index").evaluate()
     .setTitle("Sistema de Gestão de Cópias v2026")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 function doPost(e) {
   try {
-    if (!e || !e.postData) return jsonResp({ ok: false, error: "Sem dados" });
-    if ((e.postData.contents || "").length > 524288)          // 512 KB
+    if (!e || !e.postData) {
+      logEvent_("WARN", "POST", "doPost", "POST recebido sem dados", "");
+      return jsonResp({ ok: false, error: "Sem dados" });
+    }
+    const contentLen = (e.postData.contents || "").length;
+    if (contentLen > 524288) {
+      logEvent_("WARN", "POST", "doPost", "Payload rejeitado: excede 512 KB", "tamanho=" + contentLen);
       return jsonResp({ ok: false, error: "Payload excede 512 KB" });
-    const payload = JSON.parse(e.postData.contents);
-    const secret  = PropertiesService.getScriptProperties().getProperty("POST_SECRET") || "";
-    if (!secret || payload.secret !== secret)
+    }
+    let payload;
+    try { payload = JSON.parse(e.postData.contents); }
+    catch(parseErr) {
+      logEvent_("WARN", "POST", "doPost", "JSON malformado", parseErr.message);
+      return jsonResp({ ok: false, error: "Payload inválido" });
+    }
+    const secret = PropertiesService.getScriptProperties().getProperty("POST_SECRET") || "";
+    if (!secret || payload.secret !== secret) {
+      logEvent_("WARN", "POST", "doPost", "Secret inválido — acesso negado", "");
       return jsonResp({ ok: false, error: "Não autorizado" });
-    if (!Array.isArray(payload.data) || payload.data.length > 500)
+    }
+    if (!Array.isArray(payload.data) || payload.data.length > 500) {
+      logEvent_("WARN", "POST", "doPost", "payload.data inválido",
+                "length=" + (Array.isArray(payload.data) ? payload.data.length : "not-array"));
       return jsonResp({ ok: false, error: "payload.data deve ser array com até 500 itens" });
-    return jsonResp(saveKPIDataManual(JSON.stringify(payload.data)));
+    }
+    return jsonResp(saveKPIDataManual(JSON.stringify(payload.data), "POST"));
   } catch(err) {
-    return jsonResp({ ok: false, error: err.message });
+    logEvent_("ERROR", "POST", "doPost", "Erro inesperado", err.message);
+    return jsonResp({ ok: false, error: "Erro interno" });
   }
 }
 
@@ -51,7 +143,84 @@ function jsonResp(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Column mapping ───────────────────────────────────────────────────────────
+function normalizeColName(h) {
+  return String(h || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\s_\-]+/g, " ")
+    .trim();
+}
+
+function findColByNames_(normHeaders, names, fallback) {
+  const normNames = names.map(normalizeColName);
+  for (const name of normNames) {
+    const idx = normHeaders.findIndex(h => h === name);
+    if (idx >= 0) return { idx, usedFallback: false };
+  }
+  for (const name of normNames) {
+    const idx = normHeaders.findIndex(h => h.startsWith(name));
+    if (idx >= 0) return { idx, usedFallback: false };
+  }
+  for (const name of normNames) {
+    const idx = normHeaders.findIndex(h => h.includes(name));
+    if (idx >= 0) return { idx, usedFallback: false };
+  }
+  return { idx: fallback, usedFallback: true };
+}
+
+// ─── KPI row parser (handles legacy 14-col and new 15-col formats) ────────────
+function parseKpiRow_(row, hasSessionId, tz) {
+  if (hasSessionId) {
+    // col0=SESSION_ID, col1=TIMESTAMP, col2=ALT_VERSAO, col3=ABERTA ...
+    const ts = row[1] instanceof Date
+      ? Utilities.formatDate(row[1], tz, "yyyy-MM-dd HH:mm:ss")
+      : String(row[1] || "").trim();
+    return {
+      SESSION_ID:                    String(row[0]  || ""),
+      TIMESTAMP:                     ts,
+      ALT_VERSAO:                    String(row[2]  || ""),
+      ABERTA:                        Number(row[3]  || 0),
+      ANDAMENTO:                     Number(row[4]  || 0),
+      CORRIGINDO:                    Number(row[5]  || 0),
+      CORRIGIDO:                     Number(row[6]  || 0),
+      CONFERIDO:                     Number(row[7]  || 0),
+      TOTAL:                         Number(row[8]  || 0),
+      KPI_ABERTA_ANDAMENTO:          Number(row[9]  || 0),
+      KPI_CORRIGINDO_CORRIGIDO:      Number(row[10] || 0),
+      KPI_CONFERIDO:                 Number(row[11] || 0),
+      SEMAFORO_ABERTA_ANDAMENTO:     String(row[12] || ""),
+      SEMAFORO_CORRIGINDO_CORRIGIDO: String(row[13] || ""),
+      SEMAFORO_CONFERIDO:            String(row[14] || ""),
+    };
+  }
+  // Legacy: col0=TIMESTAMP, col1=ALT_VERSAO ... (14 or fewer cols)
+  const numCols = row.length;
+  const isNew14 = numCols >= 14;
+  const ts = row[0] instanceof Date
+    ? Utilities.formatDate(row[0], tz, "yyyy-MM-dd HH:mm:ss")
+    : String(row[0] || "").trim();
+  return {
+    SESSION_ID:                    "",
+    TIMESTAMP:                     ts,
+    ALT_VERSAO:                    String(row[1]  || ""),
+    ABERTA:                        Number(row[2]  || 0),
+    ANDAMENTO:                     Number(row[3]  || 0),
+    CORRIGINDO:                    Number(row[4]  || 0),
+    CORRIGIDO:                     Number(row[5]  || 0),
+    CONFERIDO:                     Number(row[6]  || 0),
+    TOTAL:                         Number(row[7]  || 0),
+    KPI_ABERTA_ANDAMENTO:          Number(row[8]  || 0),
+    KPI_CORRIGINDO_CORRIGIDO:      isNew14 ? Number(row[9]  || 0) : null,
+    KPI_CONFERIDO:                 isNew14 ? Number(row[10] || 0) : Number(row[9]  || 0),
+    SEMAFORO_ABERTA_ANDAMENTO:     isNew14 ? String(row[11] || "") : String(row[10] || ""),
+    SEMAFORO_CORRIGINDO_CORRIGIDO: isNew14 ? String(row[12] || "") : null,
+    SEMAFORO_CONFERIDO:            isNew14 ? String(row[13] || "") : String(row[11] || ""),
+  };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function getSheetData(ss, name) {
   const sheet = ss.getSheetByName(name);
   if (!sheet) return [];
@@ -60,55 +229,40 @@ function getSheetData(ss, name) {
   return sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).getValues();
 }
 
-// Normaliza header para comparação: minúsculas + sem acentos
-function normalizeHeader(h) {
-  return String(h || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-}
-
 function buildAllItems(ss) {
   const tz    = ss.getSpreadsheetTimeZone();
   const sheet = ss.getSheetByName(CONFIG.SHEET_GERAL);
-  if (!sheet) return [];
+  if (!sheet) {
+    logEvent_("WARN", "SISTEMA", "buildAllItems", "Aba '" + CONFIG.SHEET_GERAL + "' não encontrada", "");
+    return [];
+  }
   const last = Math.min(sheet.getLastRow(), CONFIG.MAX_ROWS + 1);
   if (last < 2) return [];
-  const numCols = sheet.getLastColumn();
+  const numCols    = sheet.getLastColumn();
+  const rawHeaders = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+  const normHeaders = rawHeaders.map(normalizeColName);
 
-  const headers = sheet.getRange(1, 1, 1, numCols).getValues()[0].map(normalizeHeader);
-
-  function findCol(keywords, fallback) {
-    const normKeys = keywords.map(normalizeHeader);
-    // Prioridade: match exato → startsWith → includes
-    for (const strategy of [
-      (h, k) => h === k,
-      (h, k) => h.startsWith(k),
-      (h, k) => h.includes(k),
-    ]) {
-      const idx = headers.findIndex(h => normKeys.some(k => strategy(h, k)));
-      if (idx >= 0) return idx;
+  const colMap = {};
+  for (const [field, cfg] of Object.entries(GERAL_COLUMNS)) {
+    const result = findColByNames_(normHeaders, cfg.names, cfg.fallback);
+    if (result.usedFallback && cfg.required) {
+      logEvent_("WARN", "SISTEMA", "buildAllItems",
+        "Coluna obrigatória '" + field + "' não encontrada — usando posição " + cfg.fallback,
+        "cabeçalhos: " + rawHeaders.slice(0, 10).join(" | "));
     }
-    return fallback;
+    colMap[field] = result.idx;
   }
-
-  const c = {
-    data:      findCol(["data_liberacao", "data_lib", "data_", "dt_", "data", "date", "dt"],        0),
-    versao:    findCol(["alt_versao", "versao_alt", "versao", "version", "ver_"],                    1),
-    requisito: findCol(["nr_requisito", "num_requisito", "requisito", "requirement", "req_"],        2),
-    cliente:   findCol(["nm_cliente", "nome_cliente", "cliente", "client", "customer"],              3),
-    status:    findCol(["ds_status", "status", "situacao", "state"],                                 5),
-    caminho:   findCol(["caminho_rede", "caminho_completo", "caminho", "path", "diretorio", "dir_"], 7),
-    revisao:   findCol(["nr_revisao", "num_revisao", "revisao", "revision", "rev_"],                 8),
-  };
 
   const rows = sheet.getRange(2, 1, last - 1, numCols).getValues();
   return rows.map(row => ({
-    dataOrigem:   row[c.data] instanceof Date ? Utilities.formatDate(row[c.data], tz, "yyyy-MM-dd") : "",
-    dataExibicao: row[c.data] instanceof Date ? Utilities.formatDate(row[c.data], tz, "dd/MM/yyyy") : "",
-    versao:    String(row[c.versao]    || ""),
-    requisito: String(row[c.requisito] || ""),
-    cliente:   String(row[c.cliente]   || ""),
-    status:    String(row[c.status]    || ""),
-    caminho:   String(row[c.caminho]   || ""),
-    revisao:   String(row[c.revisao]   || ""),
+    dataOrigem:   row[colMap.data] instanceof Date ? Utilities.formatDate(row[colMap.data], tz, "yyyy-MM-dd") : "",
+    dataExibicao: row[colMap.data] instanceof Date ? Utilities.formatDate(row[colMap.data], tz, "dd/MM/yyyy") : "",
+    versao:    String(row[colMap.versao]    || ""),
+    requisito: String(row[colMap.requisito] || ""),
+    cliente:   String(row[colMap.cliente]   || ""),
+    status:    String(row[colMap.status]    || ""),
+    caminho:   String(row[colMap.caminho]   || ""),
+    revisao:   String(row[colMap.revisao]   || ""),
   })).filter(r => r.dataOrigem !== "");
 }
 
@@ -117,7 +271,7 @@ function applyFilters(items, filters) {
     if (filters.cliente    && r.cliente    !== filters.cliente)       return false;
     if (filters.dataInicio && r.dataOrigem <  filters.dataInicio)     return false;
     if (filters.dataFim    && r.dataOrigem >  filters.dataFim)        return false;
-    if (filters.revisao    && !r.revisao.toLowerCase().includes(filters.revisao.toLowerCase())) return false;
+    if (filters.revisao    && !r.revisao.toLowerCase().includes(filters.revisao.toLowerCase()))   return false;
     if (filters.requisito  && !r.requisito.toLowerCase().includes(filters.requisito.toLowerCase())) return false;
     return true;
   });
@@ -133,7 +287,7 @@ function applySort(items, campo, dir) {
   });
 }
 
-// ─── Dashboard helpers ───────────────────────────────────────────────────────
+// ─── Dashboard helpers ────────────────────────────────────────────────────────
 function buildCards_(items, today, tz) {
   const total      = items.length;
   const hoje       = items.filter(r => r.dataOrigem === today).length;
@@ -151,9 +305,7 @@ function buildCards_(items, today, tz) {
   }
 
   return {
-    total,
-    hoje,
-    semCaminho,
+    total, hoje, semCaminho,
     media7d:  mediaUltimosNDias(7),
     media30d: mediaUltimosNDias(30),
     clientes: new Set(items.map(r => r.cliente).filter(Boolean)).size,
@@ -196,7 +348,6 @@ function buildCharts_(items, today, tz) {
   const trend30 = Object.entries(trend30Raw)
     .reduce((o,[k,v])=>{ o.labels.push(k.substring(5)); o.data.push(v); return o; },{labels:[],data:[]});
 
-  // cliTotalMap e trend30Raw são passados para buildReports_ via getDashboardData
   return { cliHoje, versoesHojeMap, trend30, weekMap, top10, cliTotalMap, trend30Raw };
 }
 
@@ -218,14 +369,12 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
   const topRevisoes = Object.entries(revMap).sort((a,b)=>b[1]-a[1]).slice(0,10)
     .reduce((o,[k,v])=>{ o.labels.push(k); o.data.push(v); return o; },{labels:[],data:[]});
 
-  // Pareto (top 15 clientes, com % acumulado)
   const sortedCli = Object.entries(cliTotalMap).sort((a,b)=>b[1]-a[1]).slice(0,15);
   const pareto    = sortedCli.reduce((o,[k,v])=>{ o.labels.push(k); o.data.push(v); return o; },{labels:[],data:[]});
   let acc = 0;
   const totalP = pareto.data.reduce((a,b)=>a+b,0);
   pareto.cumulative = pareto.data.map(v => { acc += v; return totalP ? Math.round(acc*100/totalP) : 0; });
 
-  // Taxa de revisão por cliente (% de itens com revisão preenchida)
   const cliRevMap = {};
   items.forEach(r => {
     if (!cliRevMap[r.cliente]) cliRevMap[r.cliente] = { total:0, comRev:0 };
@@ -247,7 +396,6 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
   const semCaminho     = items.filter(r => !r.caminho || !r.caminho.trim()).length;
   const semCaminhoPerc = total ? Math.round(semCaminho*100/total) : 0;
 
-  // Tendência 7d vs 7d anteriores
   const u7 = [], a7 = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
@@ -263,22 +411,14 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
 
   return {
     mensal: Object.entries(mensalMap).reduce((o,[k,v])=>{ o.labels.push(k); o.data.push(v); return o; },{labels:[],data:[]}),
-    topRevisoes,
-    pareto,
-    taxaRevisao,
-    concentracao,
-    taxaRevisaoGlobal,
-    tendencia7,
-    ultimos7:        sumU7,
-    anteriores7:     sumA7,
-    semCaminhoCount: semCaminho,
-    semCaminhoPerc,
-    // Chave do mês atual calculada no backend (fuso horário da planilha)
+    topRevisoes, pareto, taxaRevisao, concentracao, taxaRevisaoGlobal,
+    tendencia7, ultimos7: sumU7, anteriores7: sumA7,
+    semCaminhoCount: semCaminho, semCaminhoPerc,
     mesAtualKey: Utilities.formatDate(new Date(), tz, "yyyy-MM"),
   };
 }
 
-// ─── Dashboard (dados agregados — nenhum dado bruto é transferido) ────────────
+// ─── Dashboard ────────────────────────────────────────────────────────────────
 function getDashboardData(filtersJson) {
   try {
     const filters = filtersJson ? JSON.parse(filtersJson) : {};
@@ -288,7 +428,6 @@ function getDashboardData(filtersJson) {
 
     const allItems  = buildAllItems(ss);
     const items     = applyFilters(allItems, filters);
-
     const cards     = buildCards_(items, today, tz);
     const rawCharts = buildCharts_(items, today, tz);
     const charts    = {
@@ -300,7 +439,6 @@ function getDashboardData(filtersJson) {
     };
     const reports    = buildReports_(items, rawCharts.cliTotalMap, rawCharts.trend30Raw, tz);
     const clientList = [...new Set(allItems.map(r => r.cliente).filter(Boolean))].sort();
-
     const sortCampo  = filters.sortCampo || "dataOrigem";
     const sortDir    = filters.sortDir   || "desc";
     const sorted     = applySort(items, sortCampo, sortDir);
@@ -308,19 +446,17 @@ function getDashboardData(filtersJson) {
     const totalPages = Math.ceil(sorted.length / CONFIG.PAGE_SIZE);
 
     return {
-      ok: true,
-      cards,
-      charts,
-      reports,
+      ok: true, cards, charts, reports,
       table: { rows: pageRows, totalPages, totalRows: sorted.length, page: 1 },
       clientList,
     };
   } catch(e) {
+    logEvent_("ERROR", "SISTEMA", "getDashboardData", "Erro no dashboard", e.message);
     return { ok: false, error: e.message };
   }
 }
 
-// ─── Paginated table ─────────────────────────────────────────────────────────
+// ─── Paginated table ──────────────────────────────────────────────────────────
 function getTableData(page, filtersJson) {
   try {
     const filters = filtersJson ? JSON.parse(filtersJson) : {};
@@ -351,48 +487,66 @@ function exportCSVData(filtersJson) {
     const header = ["Data","Versão","Requisito","Cliente","Status","Caminho","Revisão"];
     const rows   = items.map(r =>
       [r.dataExibicao,r.versao,r.requisito,r.cliente,r.status,r.caminho,r.revisao]
-        .map(v => `"${String(v||"").replace(/"/g,'""')}"`).join(";"));
+        .map(v => '"' + String(v||"").replace(/"/g,'""') + '"').join(";"));
     return { ok: true, csv: [header.join(";"), ...rows].join("\r\n") };
   } catch(e) {
+    logEvent_("ERROR", "SISTEMA", "exportCSVData", "Erro ao exportar CSV", e.message);
     return { ok: false, error: e.message };
   }
 }
 
-// ─── KPI Functions ────────────────────────────────────────────────────────────
-function saveKPIDataManual(jsonString) {
+// ─── KPI Save ─────────────────────────────────────────────────────────────────
+function saveKPIDataManual(jsonString, origem) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
+
+  const ss        = SpreadsheetApp.getActiveSpreadsheet();
+  const tz        = ss.getSpreadsheetTimeZone();
+  const ts        = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
+  const sessionId = Utilities.getUuid();
+  const origemStr = origem || "MANUAL";
+  let   hashPayload = "";
+
   try {
     const data = JSON.parse(jsonString);
     if (!Array.isArray(data) || data.length === 0) throw new Error("JSON inválido ou vazio");
 
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName(CONFIG.SHEET_KPI);
-    if (!sheet) sheet = ss.insertSheet(CONFIG.SHEET_KPI);
-    // Garante cabeçalho quando a aba existe mas está vazia (criação nova ou limpeza manual)
-    if (sheet.getLastRow() === 0) {
-      sheet.getRange(1, 1, 1, 14).setValues([KPI_HEADER]);
+    try {
+      const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, jsonString);
+      hashPayload  = digest.map(b => ("0" + (b & 0xFF).toString(16)).slice(-2)).join("").substring(0, 16);
+    } catch(e) {}
+
+    // Detect format of existing KPI sheet
+    let kpiSheet   = ss.getSheetByName(CONFIG.SHEET_KPI);
+    let useNewFormat = true;
+
+    if (kpiSheet && kpiSheet.getLastRow() > 0) {
+      const h0 = String(kpiSheet.getRange(1,1,1,1).getValues()[0][0] || "").toUpperCase().trim();
+      useNewFormat = (h0 === "SESSION_ID");
     }
 
-    const tz = ss.getSpreadsheetTimeZone();
-    const ts = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
+    if (!kpiSheet) kpiSheet = ss.insertSheet(CONFIG.SHEET_KPI);
+    if (kpiSheet.getLastRow() === 0) {
+      const hdr = useNewFormat ? KPI_HEADER : KPI_HEADER.slice(1);
+      kpiSheet.getRange(1, 1, 1, hdr.length).setValues([hdr]);
+      try { kpiSheet.setFrozenRows(1); } catch(e) {}
+    }
 
-    const requiredFields = KPI_HEADER.slice(1); // todos exceto TIMESTAMP
+    const requiredFields = KPI_HEADER.slice(2); // exclude SESSION_ID and TIMESTAMP
     const rows = data.map((item, idx) => {
       const label = item.ALT_VERSAO || "?";
 
       const missing = requiredFields.filter(f => item[f] === undefined || item[f] === null);
       if (missing.length)
-        throw new Error(`Item ${idx+1} (${label}): campos ausentes: ${missing.join(", ")}`);
+        throw new Error("Item " + (idx+1) + " (" + label + "): campos ausentes: " + missing.join(", "));
 
-      // Rejeita valores não numéricos; zero é válido
-      const invalidNum = KPI_NUMERIC_FIELDS.filter(f => isNaN(Number(item[f])));
+      const invalidNum = KPI_NUMERIC_FIELDS.filter(f => !isValidNumberValue(item[f]));
       if (invalidNum.length)
-        throw new Error(`Item ${idx+1} (${label}): valor não numérico em: ${invalidNum.join(", ")}`);
+        throw new Error("Item " + (idx+1) + " (" + label + "): valor inválido em: " +
+          invalidNum.map(f => f + '="' + item[f] + '"').join(", "));
 
-      return [
-        ts,
-        String(item.ALT_VERSAO || ""),
+      const baseRow = [
+        String(item.ALT_VERSAO   || ""),
         Number(item.ABERTA),
         Number(item.ANDAMENTO),
         Number(item.CORRIGINDO),
@@ -406,82 +560,139 @@ function saveKPIDataManual(jsonString) {
         String(item.SEMAFORO_CORRIGINDO_CORRIGIDO  || ""),
         String(item.SEMAFORO_CONFERIDO             || ""),
       ];
+      return useNewFormat ? [sessionId, ts, ...baseRow] : [ts, ...baseRow];
     });
 
-    const lastRow = Math.max(sheet.getLastRow(), 1);
-    sheet.getRange(lastRow + 1, 1, rows.length, 14).setValues(rows);
-    return { ok: true, saved: rows.length, timestamp: ts };
+    const colCount = useNewFormat ? 15 : 14;
+    const lastRow  = Math.max(kpiSheet.getLastRow(), 1);
+    kpiSheet.getRange(lastRow + 1, 1, rows.length, colCount).setValues(rows);
+
+    // Audit record
+    const sessoesSheet = ensureSheet_(ss, CONFIG.SHEET_SESSOES, SESSOES_HEADER);
+    sessoesSheet.appendRow([sessionId, ts, rows.length, origemStr, "SUCESSO", "", hashPayload]);
+
+    logEvent_("INFO", origemStr, "saveKPIDataManual",
+      "KPI salvo: " + rows.length + " registros", "session_id=" + sessionId);
+
+    return { ok: true, saved: rows.length, timestamp: ts, sessionId };
+
   } catch(e) {
+    try {
+      const sessoesSheet = ensureSheet_(ss, CONFIG.SHEET_SESSOES, SESSOES_HEADER);
+      sessoesSheet.appendRow([sessionId, ts, 0, origemStr, "ERRO", e.message, hashPayload]);
+    } catch(e2) {}
+    logEvent_("ERROR", origemStr, "saveKPIDataManual", "Erro ao salvar KPI", e.message);
     return { ok: false, error: e.message };
   } finally {
     lock.releaseLock();
   }
 }
 
+// ─── KPI History ──────────────────────────────────────────────────────────────
 function getKPIHistorySessions() {
   try {
-    const ss    = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName(CONFIG.SHEET_KPI);
-    if (!sheet || sheet.getLastRow() < 2) return { ok: true, sessions: [] };
-    const tz = ss.getSpreadsheetTimeZone();
+    const ss      = SpreadsheetApp.getActiveSpreadsheet();
+    const tz      = ss.getSpreadsheetTimeZone();
+    const sessions = [];
+    const knownTs  = new Set();
 
-    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
-    const countMap = {};
-    data.forEach(row => {
-      const raw = row[0];
-      const ts  = raw instanceof Date
-        ? Utilities.formatDate(raw, tz, "yyyy-MM-dd HH:mm:ss")
-        : String(raw || "").trim();
-      if (ts) countMap[ts] = (countMap[ts] || 0) + 1;
-    });
+    // Primary source: KPI_Sessoes (new audit table)
+    const sessoesSheet = ss.getSheetByName(CONFIG.SHEET_SESSOES);
+    if (sessoesSheet && sessoesSheet.getLastRow() >= 2) {
+      const numCols = Math.min(sessoesSheet.getLastColumn(), SESSOES_HEADER.length);
+      sessoesSheet.getRange(2, 1, sessoesSheet.getLastRow() - 1, numCols).getValues()
+        .forEach(row => {
+          const sid = String(row[0] || "").trim();
+          const ts  = row[1] instanceof Date
+            ? Utilities.formatDate(row[1], tz, "yyyy-MM-dd HH:mm:ss")
+            : String(row[1] || "").trim();
+          if (!ts) return;
+          knownTs.add(ts);
+          sessions.push({
+            id:     sid || ts,
+            ts,
+            count:  Number(row[2] || 0),
+            origem: String(row[3] || "MANUAL"),
+            status: String(row[4] || "SUCESSO"),
+          });
+        });
+    }
 
-    const sessions = Object.entries(countMap)
-      .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([ts, count]) => ({ ts, count }));
+    // Fallback: legacy timestamps from KPI_Historico not already in KPI_Sessoes
+    const kpiSheet = ss.getSheetByName(CONFIG.SHEET_KPI);
+    if (kpiSheet && kpiSheet.getLastRow() >= 2) {
+      const numCols   = Math.min(kpiSheet.getLastColumn(), 2);
+      const headerRow = kpiSheet.getRange(1, 1, 1, numCols).getValues()[0];
+      const hasSessionId = String(headerRow[0] || "").toUpperCase().trim() === "SESSION_ID";
+      const tsColIdx     = hasSessionId ? 1 : 0;
+      const tsData       = kpiSheet.getRange(2, tsColIdx + 1, kpiSheet.getLastRow() - 1, 1).getValues();
 
+      const legacyCount = {};
+      tsData.forEach(row => {
+        const raw = row[0];
+        const ts  = raw instanceof Date
+          ? Utilities.formatDate(raw, tz, "yyyy-MM-dd HH:mm:ss")
+          : String(raw || "").trim();
+        if (ts && !knownTs.has(ts)) legacyCount[ts] = (legacyCount[ts] || 0) + 1;
+      });
+      Object.entries(legacyCount).forEach(([ts, count]) => {
+        sessions.push({ id: ts, ts, count, origem: "LEGADO", status: "SUCESSO" });
+      });
+    }
+
+    sessions.sort((a, b) => b.ts.localeCompare(a.ts));
     return { ok: true, sessions };
   } catch(e) {
+    logEvent_("ERROR", "SISTEMA", "getKPIHistorySessions", "Erro ao carregar sessões", e.message);
     return { ok: false, error: e.message };
   }
 }
 
-function getKPIDataBySession(timestampStr) {
+function getKPIDataBySession(identifier) {
   try {
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName(CONFIG.SHEET_KPI);
     if (!sheet || sheet.getLastRow() < 2) return { ok: true, data: [] };
     const tz = ss.getSpreadsheetTimeZone();
 
-    const numCols = sheet.getLastColumn();
-    const raw     = sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
-    const isNew   = numCols >= 14;
+    const numCols      = sheet.getLastColumn();
+    const headerRow    = sheet.getRange(1, 1, 1, Math.min(numCols, 2)).getValues()[0];
+    const hasSessionId = String(headerRow[0] || "").toUpperCase().trim() === "SESSION_ID";
 
-    const rows = raw
-      .filter(row => {
-        const v  = row[0];
-        const ts = v instanceof Date
-          ? Utilities.formatDate(v, tz, "yyyy-MM-dd HH:mm:ss")
-          : String(v || "").trim();
-        return ts === timestampStr;
-      })
-      .map(row => ({
-        ALT_VERSAO:                    String(row[1]  || ""),
-        ABERTA:                        Number(row[2]  || 0),
-        ANDAMENTO:                     Number(row[3]  || 0),
-        CORRIGINDO:                    Number(row[4]  || 0),
-        CORRIGIDO:                     Number(row[5]  || 0),
-        CONFERIDO:                     Number(row[6]  || 0),
-        TOTAL:                         Number(row[7]  || 0),
-        KPI_ABERTA_ANDAMENTO:          Number(row[8]  || 0),
-        KPI_CORRIGINDO_CORRIGIDO:      isNew ? Number(row[9]  || 0) : null,
-        KPI_CONFERIDO:                 isNew ? Number(row[10] || 0) : Number(row[9]  || 0),
-        SEMAFORO_ABERTA_ANDAMENTO:     isNew ? String(row[11] || "") : String(row[10] || ""),
-        SEMAFORO_CORRIGINDO_CORRIGIDO: isNew ? String(row[12] || "") : null,
-        SEMAFORO_CONFERIDO:            isNew ? String(row[13] || "") : String(row[11] || ""),
-      }));
+    // If identifier is a UUID but sheet is legacy, resolve via KPI_Sessoes
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let lookupKey = identifier;
+    if (!hasSessionId && UUID_RE.test(identifier)) {
+      const sessoesSheet = ss.getSheetByName(CONFIG.SHEET_SESSOES);
+      if (sessoesSheet && sessoesSheet.getLastRow() >= 2) {
+        const sessoesRows = sessoesSheet.getRange(2, 1, sessoesSheet.getLastRow() - 1, 2).getValues();
+        const found = sessoesRows.find(row => String(row[0]) === identifier);
+        if (found) {
+          lookupKey = found[1] instanceof Date
+            ? Utilities.formatDate(found[1], tz, "yyyy-MM-dd HH:mm:ss")
+            : String(found[1] || "").trim();
+        }
+      }
+    }
+
+    const raw  = sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
+    const rows = raw.filter(row => {
+      if (hasSessionId) {
+        const sid = String(row[0] || "").trim();
+        const ts  = row[1] instanceof Date
+          ? Utilities.formatDate(row[1], tz, "yyyy-MM-dd HH:mm:ss")
+          : String(row[1] || "").trim();
+        return sid === lookupKey || ts === lookupKey;
+      }
+      const ts = row[0] instanceof Date
+        ? Utilities.formatDate(row[0], tz, "yyyy-MM-dd HH:mm:ss")
+        : String(row[0] || "").trim();
+      return ts === lookupKey;
+    }).map(row => parseKpiRow_(row, hasSessionId, tz));
 
     return { ok: true, data: rows };
   } catch(e) {
+    logEvent_("ERROR", "SISTEMA", "getKPIDataBySession", "Erro ao carregar dados de sessão", e.message);
     return { ok: false, error: e.message };
   }
 }
@@ -490,39 +701,75 @@ function getLastKPI() {
   try {
     const sessRes = getKPIHistorySessions();
     if (!sessRes.ok) return sessRes;
-    if (!sessRes.sessions.length) return { ok: true, data: [], session: null, sessions: [] };
-    const lastTs  = sessRes.sessions[0].ts;
-    const dataRes = getKPIDataBySession(lastTs);
+    if (!sessRes.sessions.length) return { ok: true, data: [], session: null, sessionId: null, sessions: [] };
+    const lastSess = sessRes.sessions[0];
+    const dataRes  = getKPIDataBySession(lastSess.id);
     if (!dataRes.ok) return dataRes;
-    return { ok: true, data: dataRes.data || [], session: lastTs, sessions: sessRes.sessions };
+    return {
+      ok: true,
+      data:      dataRes.data || [],
+      session:   lastSess.ts,
+      sessionId: lastSess.id,
+      sessions:  sessRes.sessions,
+    };
   } catch(e) {
+    logEvent_("ERROR", "SISTEMA", "getLastKPI", "Erro ao carregar último KPI", e.message);
     return { ok: false, error: e.message };
   }
 }
 
+// getKPITrendData — lê a planilha uma única vez para evitar leituras repetidas
 function getKPITrendData() {
   try {
     const sessRes = getKPIHistorySessions();
     if (!sessRes.ok || !sessRes.sessions.length) return { ok: true, trend: [] };
 
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(CONFIG.SHEET_KPI);
+    if (!sheet || sheet.getLastRow() < 2) return { ok: true, trend: [] };
+    const tz = ss.getSpreadsheetTimeZone();
+
+    const numCols      = sheet.getLastColumn();
+    const headerRow    = sheet.getRange(1, 1, 1, Math.min(numCols, 2)).getValues()[0];
+    const hasSessionId = String(headerRow[0] || "").toUpperCase().trim() === "SESSION_ID";
+
+    // Single read of entire KPI sheet
+    const allRaw = sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
+
+    // Build lookup map: session key → parsed rows
+    const byKey = {};
+    allRaw.forEach(row => {
+      let key;
+      if (hasSessionId) {
+        key = String(row[0] || "").trim(); // SESSION_ID
+      } else {
+        key = row[0] instanceof Date
+          ? Utilities.formatDate(row[0], tz, "yyyy-MM-dd HH:mm:ss")
+          : String(row[0] || "").trim();
+      }
+      if (!key) return;
+      if (!byKey[key]) byKey[key] = [];
+      byKey[key].push(parseKpiRow_(row, hasSessionId, tz));
+    });
+
     const last10 = sessRes.sessions.slice(0, 10).reverse();
     const trend  = [];
 
-    for (const { ts } of last10) {
-      const dataRes = getKPIDataBySession(ts);
-      if (!dataRes.ok) continue;
-      const totalRow = dataRes.data.find(r => r.ALT_VERSAO === "TOTAL GERAL");
+    for (const sess of last10) {
+      const sessRows = byKey[sess.id] || byKey[sess.ts] || [];
+      const totalRow = sessRows.find(r => r.ALT_VERSAO === "TOTAL GERAL");
       if (!totalRow) continue;
       trend.push({
-        ts,
-        conferidoPerc: totalRow.KPI_CONFERIDO || 0,
-        abeAndPerc:    totalRow.KPI_ABERTA_ANDAMENTO || 0,
+        ts:            sess.ts,
+        conferidoPerc: totalRow.KPI_CONFERIDO          || 0,
+        abeAndPerc:    totalRow.KPI_ABERTA_ANDAMENTO   || 0,
         corrCorrPerc:  totalRow.KPI_CORRIGINDO_CORRIGIDO || 0,
       });
     }
 
     return { ok: true, trend };
   } catch(e) {
+    logEvent_("ERROR", "SISTEMA", "getKPITrendData", "Erro ao calcular tendência", e.message);
     return { ok: false, error: e.message };
   }
 }

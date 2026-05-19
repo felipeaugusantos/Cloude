@@ -1,0 +1,75 @@
+<style>
+:root{--bs-body-bg:#f0f2f5}
+body{font-size:.875rem}
+
+/* Loader */
+#globalLoader{position:fixed;inset:0;background:rgba(255,255,255,.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#globalLoader .spinner-border{width:3rem;height:3rem}
+
+/* KPI Alert */
+#kpiAlert{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:9000;min-width:360px;border-radius:0 0 .5rem .5rem;display:none;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+#kpiAlert.show{display:flex!important}
+
+/* System message */
+#systemMsg .alert{border-radius:.5rem;font-size:.85rem}
+
+/* Cards */
+.card-metric{border:none;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08);transition:transform .15s}
+.card-metric:hover{transform:translateY(-2px)}
+.card-metric .value{font-size:2rem;font-weight:700;line-height:1}
+.card-metric .label{font-size:.75rem;opacity:.85;text-transform:uppercase;letter-spacing:.5px}
+
+/* Table */
+.table-container{max-height:520px;overflow-y:auto}
+.table thead th{position:sticky;top:0;background:#343a40;color:#fff;white-space:nowrap;cursor:pointer;user-select:none}
+.table thead th:hover{background:#495057}
+tr.sem-caminho-row td{background:#ffe5e5 !important}
+tr.sem-caminho-row:hover td{background:#ffd0d0 !important}
+.btn-copy{border:none;background:none;padding:0 4px;cursor:pointer;font-size:1rem;line-height:1;color:#6c757d;transition:color .15s}
+.btn-copy:hover{color:#0d6efd}
+.sort-icon{font-size:.65rem;margin-left:3px;opacity:.6}
+
+/* Chart containers */
+.chart-card{border:none;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+
+/* Relatórios mini-cards */
+.mini-stat{border-radius:10px;padding:.75rem 1rem;color:#fff;font-weight:600;display:flex;align-items:center;gap:.75rem}
+.mini-stat .num{font-size:1.6rem;line-height:1}
+.mini-stat .lbl{font-size:.7rem;text-transform:uppercase;opacity:.9;line-height:1.2}
+.trend-up{color:#198754}
+.trend-down{color:#dc3545}
+.trend-eq{color:#6c757d}
+
+/* KPI Tab */
+.kpi-card{border:none;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.kpi-summary-card{border-radius:10px;padding:1rem 1.2rem;color:#fff;text-align:center}
+.kpi-summary-card .val{font-size:1.8rem;font-weight:700;line-height:1}
+.kpi-summary-card .lbl{font-size:.7rem;opacity:.9;text-transform:uppercase}
+
+.sem-verde  {background:#d1e7dd;color:#0a3622;border-radius:6px;padding:2px 8px;font-weight:600;font-size:.75rem}
+.sem-amarelo{background:#fff3cd;color:#664d03;border-radius:6px;padding:2px 8px;font-weight:600;font-size:.75rem}
+.sem-vermelho{background:#f8d7da;color:#58151c;border-radius:6px;padding:2px 8px;font-weight:600;font-size:.75rem}
+.sem-cinza  {background:#e2e3e5;color:#41464b;border-radius:6px;padding:2px 8px;font-weight:600;font-size:.75rem}
+
+.progress{height:8px;border-radius:4px}
+tfoot tr td{font-weight:700;background:#343a40 !important;color:#fff !important}
+
+.session-item{cursor:pointer;padding:.4rem .75rem;border-radius:6px;font-size:.8rem;transition:background .15s;display:flex;justify-content:space-between;align-items:center}
+.session-item:hover{background:#e9ecef}
+.session-item.active{background:#0d6efd;color:#fff}
+.session-item.active .text-muted{color:#cfe2ff!important}
+.session-item .badge{font-size:.65rem}
+
+/* JSON preview */
+#jsonPreviewTable{font-size:.75rem}
+#jsonPreviewTable td,#jsonPreviewTable th{padding:3px 6px}
+
+/* Status badges */
+.badge-status{font-size:.7rem;padding:3px 8px;border-radius:20px}
+
+/* Quick filter */
+#quickFilter{max-width:220px}
+
+/* Pagination */
+.page-item .page-link{font-size:.8rem;padding:.3rem .6rem}
+</style>
