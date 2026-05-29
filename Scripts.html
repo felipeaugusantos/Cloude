@@ -11,6 +11,7 @@ let tableRows      = [];
 let selectedRow    = null;
 let kpiAlertTimer  = null;
 let pendingKpiData = null;
+let lastDashResp   = null;   // stores last full dashboard response for report generation
 
 const INTERVALO_ALERTA = 2 * 60 * 60 * 1000;
 
@@ -86,6 +87,7 @@ function loadDashboard(filters) {
         return;
       }
       clearSystemMsg();
+      lastDashResp = resp;
       renderAll(resp);
       document.getElementById('lastUpdate').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
     })
@@ -102,6 +104,7 @@ function applyFilter() {
     cliente:    document.getElementById('fCliente').value,
     dataInicio: document.getElementById('fDe').value,
     dataFim:    document.getElementById('fAte').value,
+    versao:     document.getElementById('fVersao').value,
     revisao:    document.getElementById('fRevisao').value,
     requisito:  document.getElementById('fRequisito').value,
     sortCampo:  sortState.campo,
@@ -116,7 +119,7 @@ function scheduleFilter() {
 }
 
 function clearFilters() {
-  ['fCliente','fDe','fAte','fRevisao','fRequisito'].forEach(id => {
+  ['fCliente','fDe','fAte','fVersao','fRevisao','fRequisito'].forEach(id => {
     const el = document.getElementById(id);
     el.tagName === 'SELECT' ? (el.selectedIndex = 0) : (el.value = '');
   });
@@ -843,6 +846,75 @@ function confirmarSalvar() {
 function limparTextarea() {
   document.getElementById('kpiJson').value = '';
   document.getElementById('kpiImportMsg').innerHTML = '';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Google Chat Report
+// ═══════════════════════════════════════════════════════════════════════════
+function gerarRelatorioChat() {
+  const today = new Date().toISOString().substring(0, 10);
+  const todayBR = new Date().toLocaleDateString('pt-BR');
+  const time    = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  document.getElementById('chatReportContent').textContent = '⏳ Buscando dados...';
+  document.getElementById('chatReportDate').textContent = todayBR;
+  new bootstrap.Modal(document.getElementById('chatReportModal')).show();
+
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (!resp || !resp.ok) {
+        document.getElementById('chatReportContent').textContent = 'Erro ao carregar dados: ' + (resp ? resp.error : 'sem resposta');
+        return;
+      }
+      const cards = resp.cards;
+      const ch    = resp.charts;
+
+      // Zip cliHoje arrays into sorted entries
+      const cliMap = {};
+      (ch.cliHoje.labels || []).forEach((lbl, i) => { cliMap[lbl] = (ch.cliHoje.data || [])[i] || 0; });
+      const cliEntries = Object.entries(cliMap).sort((a,b) => b[1] - a[1]);
+
+      // Sort versions by count
+      const verEntries = Object.entries(ch.versoesHojeMap || {}).sort((a,b) => b[1] - a[1]);
+
+      const lines = [];
+      lines.push('📦 *Relatório de Cópias — ' + todayBR + '*');
+      lines.push('');
+      lines.push('📊 *Total gerado hoje:* ' + cards.hoje);
+
+      if (cliEntries.length) {
+        lines.push('');
+        lines.push('👥 *Por Cliente:*');
+        cliEntries.forEach(([cli, qtd]) => lines.push('  • ' + cli + ': ' + qtd + (qtd === 1 ? ' cópia' : ' cópias')));
+      }
+
+      if (verEntries.length) {
+        lines.push('');
+        lines.push('📋 *Por Versão:*');
+        verEntries.forEach(([ver, qtd]) => lines.push('  • ' + ver + ': ' + qtd + (qtd === 1 ? ' cópia' : ' cópias')));
+      }
+
+      lines.push('');
+      lines.push('_Gerado em ' + time + '_');
+
+      document.getElementById('chatReportContent').textContent = lines.join('\n');
+    })
+    .withFailureHandler(err => {
+      document.getElementById('chatReportContent').textContent = 'Erro: ' + err.message;
+    })
+    .getDashboardData(JSON.stringify({ dataInicio: today, dataFim: today }));
+}
+
+function copiarRelatorioChat() {
+  const text = document.getElementById('chatReportContent').textContent;
+  if (!text || text.startsWith('⏳') || text.startsWith('Erro')) return;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast();
+    try {
+      const m = bootstrap.Modal.getInstance(document.getElementById('chatReportModal'));
+      if (m) m.hide();
+    } catch(e) {}
+  }).catch(() => {});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

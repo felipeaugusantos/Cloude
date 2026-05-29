@@ -273,10 +273,11 @@ function buildAllItems(ss) {
 
 function applyFilters(items, filters) {
   return items.filter(r => {
-    if (filters.cliente    && r.cliente    !== filters.cliente)       return false;
-    if (filters.dataInicio && r.dataOrigem <  filters.dataInicio)     return false;
-    if (filters.dataFim    && r.dataOrigem >  filters.dataFim)        return false;
-    if (filters.revisao    && !r.revisao.toLowerCase().includes(filters.revisao.toLowerCase()))   return false;
+    if (filters.cliente    && r.cliente    !== filters.cliente)                                      return false;
+    if (filters.dataInicio && r.dataOrigem <  filters.dataInicio)                                   return false;
+    if (filters.dataFim    && r.dataOrigem >  filters.dataFim)                                      return false;
+    if (filters.versao     && !r.versao.toLowerCase().includes(filters.versao.toLowerCase()))       return false;
+    if (filters.revisao    && !r.revisao.toLowerCase().includes(filters.revisao.toLowerCase()))     return false;
     if (filters.requisito  && !r.requisito.toLowerCase().includes(filters.requisito.toLowerCase())) return false;
     return true;
   });
