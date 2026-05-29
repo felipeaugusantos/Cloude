@@ -225,6 +225,79 @@ function renderDashCharts(ch) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Charts — Relatórios
+// ─── Inline data-label plugin (no external library needed) ───────────────────
+// axis: 'vertical' (bars grow up) | 'horizontal' (bars grow right)
+// opts.dsIndex : only label this dataset index (null = all bar datasets)
+// opts.suffix  : string appended to value (e.g. '%')
+// opts.color   : label fill color
+function makeLabelPlugin(axis, opts) {
+  opts = opts || {};
+  const suffix  = opts.suffix  !== undefined ? opts.suffix  : '';
+  const dsIndex = opts.dsIndex !== undefined ? opts.dsIndex : null;
+  const color   = opts.color   || '#212529';
+  const fs      = opts.fontSize || 10;
+  return {
+    id: 'inlineLabel',
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      ctx.save();
+      ctx.font = 'bold ' + fs + 'px sans-serif';
+      chart.data.datasets.forEach((dataset, i) => {
+        if (dsIndex !== null && i !== dsIndex) return;
+        const meta = chart.getDatasetMeta(i);
+        if (meta.hidden || meta.type === 'line') return; // skip line overlays
+        meta.data.forEach((el, j) => {
+          const val = dataset.data[j];
+          if (!val) return;
+          const label = val + suffix;
+          ctx.fillStyle = color;
+          if (axis === 'horizontal') {
+            ctx.textAlign    = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, el.x + 4, el.y);
+          } else {
+            ctx.textAlign    = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(label, el.x, el.y - 2);
+          }
+        });
+      });
+      ctx.restore();
+    }
+  };
+}
+
+// ─── Inline point-label plugin for line charts ────────────────────────────────
+// Shows values above each visible point; skips 0 and every other point when
+// there are many data points to avoid clutter.
+function makePointLabelPlugin(dsIndex, opts) {
+  opts = opts || {};
+  const suffix  = opts.suffix   !== undefined ? opts.suffix  : '';
+  const color   = opts.color    || '#0d6efd';
+  const fs      = opts.fontSize || 9;
+  const step    = opts.step     || 1; // show every Nth point
+  return {
+    id: 'inlinePointLabel',
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      const meta = chart.getDatasetMeta(dsIndex);
+      if (!meta || meta.hidden) return;
+      ctx.save();
+      ctx.font = 'bold ' + fs + 'px sans-serif';
+      ctx.fillStyle = color;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'bottom';
+      meta.data.forEach((el, j) => {
+        if (j % step !== 0) return;
+        const val = chart.data.datasets[dsIndex].data[j];
+        if (!val) return;
+        ctx.fillText(val + suffix, el.x, el.y - 4);
+      });
+      ctx.restore();
+    }
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 function renderRelCharts(ch, r) {
   document.getElementById('rTaxaRevisao').textContent =
@@ -247,6 +320,7 @@ function renderRelCharts(ch, r) {
       datasets: [{ label: 'Cópias', data: r.mensal.data,
         backgroundColor: r.mensal.data.map((_,i,a) => i===a.length-1?'#0d6efd':'#adb5bd'), borderRadius: 4 }]
     },
+    plugins: [makeLabelPlugin('vertical')],
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
 
@@ -255,6 +329,7 @@ function renderRelCharts(ch, r) {
   charts.chartSemana = new Chart(document.getElementById('chartSemana'), {
     type: 'bar',
     data: { labels: DAY_ORDER, datasets: [{ data: DAY_ORDER.map(k => ch.weekMap[k]||0), backgroundColor: '#6610f2', borderRadius: 4 }] },
+    plugins: [makeLabelPlugin('vertical', { color: '#6610f2' })],
     options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
 
@@ -265,10 +340,11 @@ function renderRelCharts(ch, r) {
     data: {
       labels: ch.trend30.labels,
       datasets: [
-        { label: 'Cópias', data: trendY, fill: true, tension: .3, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.08)', pointRadius: 2 },
+        { label: 'Cópias', data: trendY, fill: true, tension: .3, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.08)', pointRadius: 3 },
         { label: 'Tendência', data: trendLine, type: 'line', borderColor: '#dc3545', borderDash: [6,3], pointRadius: 0, tension: 0 },
       ]
     },
+    plugins: [makePointLabelPlugin(0, { color: '#0d6efd', step: 3 })],
     options: { plugins: { legend: { labels: { font: { size: 10 } } } }, scales: { y: { beginAtZero: true } } }
   });
 
@@ -283,6 +359,7 @@ function renderRelCharts(ch, r) {
         { label: '80%', data: r.pareto.labels.map(()=>80), type: 'line', borderColor: '#dc3545', borderDash: [5,3], pointRadius: 0, yAxisID: 'y2' },
       ]
     },
+    plugins: [makeLabelPlugin('vertical', { dsIndex: 0, color: '#0d6efd' })],
     options: {
       plugins: { legend: { labels: { font: { size: 10 } } } },
       scales: {
@@ -296,18 +373,24 @@ function renderRelCharts(ch, r) {
   charts.chartTop10 = new Chart(document.getElementById('chartTop10'), {
     type: 'bar',
     data: { labels: ch.top10.labels, datasets: [{ data: ch.top10.data, backgroundColor: '#198754', borderRadius: 4 }] },
-    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+    plugins: [makeLabelPlugin('horizontal', { color: '#198754' })],
+    options: { indexAxis: 'y', layout: { padding: { right: 32 } },
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { display: false }, grid: { display: false } } } }
   });
 
   destroyChart('chartTopRevisoes');
+  const revColors = r.topRevisoes.data.map(v => v>=10?'#dc3545':v>=5?'#ffc107':'#198754');
   charts.chartTopRevisoes = new Chart(document.getElementById('chartTopRevisoes'), {
     type: 'bar',
     data: {
       labels: r.topRevisoes.labels,
-      datasets: [{ data: r.topRevisoes.data,
-        backgroundColor: r.topRevisoes.data.map(v => v>=10?'#dc3545':v>=5?'#ffc107':'#198754'), borderRadius: 4 }]
+      datasets: [{ data: r.topRevisoes.data, backgroundColor: revColors, borderRadius: 4 }]
     },
-    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+    plugins: [makeLabelPlugin('horizontal', { color: '#212529', fontSize: 10 })],
+    options: { indexAxis: 'y', layout: { padding: { right: 32 } },
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { display: false }, grid: { display: false } } } }
   });
 }
 
