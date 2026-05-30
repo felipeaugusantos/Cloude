@@ -484,6 +484,81 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
+function buildDecision_(items, reports, rawCharts, today, tz) {
+  const total = items.length;
+  const hoje = items.filter(r => r.dataOrigem === today).length;
+  const semCaminho = items.filter(r => !r.caminho || !r.caminho.trim()).length;
+  const semCliente = items.filter(r => !r.cliente || !r.cliente.trim()).length;
+  const semVersao = items.filter(r => !r.versao || !r.versao.trim()).length;
+  const semRequisito = items.filter(r => !r.requisito || !r.requisito.trim()).length;
+  const comRevisao = items.filter(r => r.revisao && r.revisao.trim()).length;
+  const taxaRevisao = total ? Math.round(comRevisao * 100 / total) : 0;
+  const dataQuality = total
+    ? Math.max(0, Math.round(100 - ((semCaminho + semCliente + semVersao + semRequisito) * 100 / (total * 4))))
+    : 100;
+
+  const versionMap = {};
+  items.forEach(r => {
+    const key = r.versao || "Sem versão";
+    if (!versionMap[key]) versionMap[key] = { total:0, semCaminho:0, revisao:0 };
+    versionMap[key].total++;
+    if (!r.caminho || !r.caminho.trim()) versionMap[key].semCaminho++;
+    if (r.revisao && r.revisao.trim()) versionMap[key].revisao++;
+  });
+
+  const topClientEntry = Object.entries(rawCharts.cliTotalMap || {}).sort((a,b)=>b[1]-a[1])[0] || ["-", 0];
+  const topVersionEntry = Object.entries(versionMap).sort((a,b)=>b[1].total-a[1].total)[0] || ["-", { total:0, semCaminho:0, revisao:0 }];
+
+  const topClients = Object.entries(rawCharts.cliTotalMap || {})
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0, 8)
+    .map(([cliente, count]) => {
+      const cliItems = items.filter(r => r.cliente === cliente);
+      const cliSemCaminho = cliItems.filter(r => !r.caminho || !r.caminho.trim()).length;
+      const cliComRev = cliItems.filter(r => r.revisao && r.revisao.trim()).length;
+      const pct = total ? Math.round(count * 100 / total) : 0;
+      let status = "Normal";
+      if (pct >= 35 || cliSemCaminho >= 10) status = "Crítico";
+      else if (pct >= 20 || cliSemCaminho >= 3 || (count && cliComRev * 100 / count >= 50)) status = "Atenção";
+      return { cliente, total: count, pct, semCaminho: cliSemCaminho, taxaRevisao: count ? Math.round(cliComRev * 100 / count) : 0, status };
+    });
+
+  const trendValues = rawCharts.trend30Raw ? Object.values(rawCharts.trend30Raw) : [];
+  const avg30 = trendValues.length ? trendValues.reduce((a,b)=>a+b,0) / trendValues.length : 0;
+  const spikePct = avg30 ? Math.round((hoje - avg30) * 100 / avg30) : 0;
+  const riskScore =
+    (reports.semCaminhoPerc >= 10 ? 35 : reports.semCaminhoPerc >= 5 ? 20 : 0) +
+    (reports.concentracao >= 70 ? 30 : reports.concentracao >= 50 ? 15 : 0) +
+    (reports.tendencia7 >= 30 ? 20 : reports.tendencia7 >= 15 ? 10 : 0) +
+    (dataQuality < 85 ? 20 : dataQuality < 95 ? 10 : 0);
+  const riskLevel = riskScore >= 60 ? "Crítico" : riskScore >= 30 ? "Atenção" : "Normal";
+
+  const recommendations = [];
+  if (semCaminho > 0) recommendations.push({ level: semCaminho >= 10 ? "Crítico" : "Atenção", title: "Corrigir caminhos ausentes", detail: semCaminho + " registro(s) sem caminho podem bloquear conferência ou comunicação." });
+  if (topClientEntry[1] && total && Math.round(topClientEntry[1] * 100 / total) >= 30) recommendations.push({ level: "Atenção", title: "Monitorar concentração por cliente", detail: topClientEntry[0] + " concentra " + Math.round(topClientEntry[1] * 100 / total) + "% do volume filtrado." });
+  if (reports.tendencia7 >= 20) recommendations.push({ level: "Atenção", title: "Preparar capacidade operacional", detail: "Os últimos 7 dias estão " + reports.tendencia7 + "% acima dos 7 dias anteriores." });
+  if (spikePct >= 50 && hoje >= 5) recommendations.push({ level: "Crítico", title: "Investigar pico diário", detail: "Hoje está " + spikePct + "% acima da média diária dos últimos 30 dias." });
+  if (taxaRevisao >= 40) recommendations.push({ level: "Atenção", title: "Revisar causas de retrabalho", detail: "A taxa de revisão está em " + taxaRevisao + "% no período filtrado." });
+  if (!recommendations.length) recommendations.push({ level: "Normal", title: "Operação estável", detail: "Nenhum desvio relevante foi identificado para o período filtrado." });
+
+  const anomalies = [];
+  if (spikePct >= 50 && hoje >= 5) anomalies.push("Volume de hoje acima do padrão recente: +" + spikePct + "%.");
+  if (reports.semCaminhoPerc >= 10) anomalies.push("Percentual de registros sem caminho acima de 10%.");
+  if (reports.concentracao >= 70) anomalies.push("Top 3 clientes concentram " + reports.concentracao + "% do volume.");
+  if (dataQuality < 90) anomalies.push("Qualidade da base abaixo de 90%.");
+
+  return {
+    riskLevel, riskScore,
+    topClient: { name: topClientEntry[0], total: topClientEntry[1], pct: total ? Math.round(topClientEntry[1] * 100 / total) : 0 },
+    topVersion: { name: topVersionEntry[0], total: topVersionEntry[1].total, semCaminho: topVersionEntry[1].semCaminho },
+    dataQuality, tendencia7: reports.tendencia7,
+    semCaminho, semCaminhoPerc: reports.semCaminhoPerc, taxaRevisao,
+    recommendations: recommendations.slice(0, 5),
+    anomalies, topClients,
+    health: { semCaminho, semCliente, semVersao, semRequisito },
+  };
+}
+
 function getDashboardData(filtersJson) {
   try {
     assertAuthorized_("getDashboardData");
@@ -509,6 +584,7 @@ function getDashboardData(filtersJson) {
       top10:          rawCharts.top10,
     };
     const reports    = buildReports_(items, rawCharts.cliTotalMap, rawCharts.trend30Raw, tz);
+    const decision   = buildDecision_(items, reports, rawCharts, today, tz);
     const clientList = [...new Set(allItems.map(r => r.cliente).filter(Boolean))].sort();
     const sortCampo  = filters.sortCampo || "dataOrigem";
     const sortDir    = filters.sortDir   || "desc";
@@ -517,7 +593,7 @@ function getDashboardData(filtersJson) {
     const totalPages = Math.ceil(sorted.length / CONFIG.PAGE_SIZE);
 
     const response = {
-      ok: true, cards, charts, reports,
+      ok: true, cards, charts, reports, decision,
       table: { rows: pageRows, totalPages, totalRows: sorted.length, page: 1 },
       clientList,
     };

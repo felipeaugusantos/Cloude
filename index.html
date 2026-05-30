@@ -100,6 +100,7 @@
   <ul class="nav dashboard-tabs mb-3" id="mainTabs">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabDash">Dashboard Geral</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabRel">Relatórios Inteligentes</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabDecision">Centro de Decisão</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabKpi" id="kpiTabBtn">KPI Fechamento</button></li>
   </ul>
 
@@ -367,6 +368,84 @@
         </div>
       </div>
     </div><!-- /tabRel -->
+
+    <!-- ══ TAB DECISÃO ════════════════════════════════════════════════════ -->
+    <div class="tab-pane fade" id="tabDecision">
+      <div class="row g-3 mb-3">
+        <div class="col-sm-6 col-xl-3">
+          <div class="decision-card p-3">
+            <div class="decision-label">Risco operacional</div>
+            <div class="decision-value" id="dRisk">—</div>
+            <div class="decision-foot" id="dRiskScore">Score —</div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+          <div class="decision-card p-3">
+            <div class="decision-label">Cliente prioritário</div>
+            <div class="decision-value text-truncate" id="dTopClient">—</div>
+            <div class="decision-foot" id="dTopClientMeta">—</div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+          <div class="decision-card p-3">
+            <div class="decision-label">Versão crítica</div>
+            <div class="decision-value text-truncate" id="dTopVersion">—</div>
+            <div class="decision-foot" id="dTopVersionMeta">—</div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+          <div class="decision-card p-3">
+            <div class="decision-label">Confiabilidade da base</div>
+            <div class="decision-value" id="dQuality">—%</div>
+            <div class="decision-foot" id="dQualityMeta">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-lg-5">
+          <div class="card decision-panel p-3 h-100">
+            <h6 class="card-title text-muted mb-3">Recomendações do Sistema</h6>
+            <div id="decisionRecs" class="decision-list"></div>
+          </div>
+        </div>
+        <div class="col-lg-7">
+          <div class="card decision-panel p-3 h-100">
+            <h6 class="card-title text-muted mb-3">Clientes por Impacto</h6>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0 decision-table">
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Total</th>
+                    <th>%</th>
+                    <th>Sem caminho</th>
+                    <th>Rev.</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="decisionClientRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <div class="card decision-panel p-3 h-100">
+            <h6 class="card-title text-muted mb-3">Anomalias Detectadas</h6>
+            <div id="decisionAnomalies" class="decision-list"></div>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="card decision-panel p-3 h-100">
+            <h6 class="card-title text-muted mb-3">Saúde da Base</h6>
+            <div id="decisionHealth" class="health-grid"></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /tabDecision -->
 
     <!-- ══ TAB KPI ════════════════════════════════════════════════════════ -->
     <div class="tab-pane fade" id="tabKpi">

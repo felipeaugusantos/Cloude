@@ -185,11 +185,66 @@ function renderAll(resp) {
 
   renderDashCharts(resp.charts);
   renderRelCharts(resp.charts, resp.reports);
+  renderDecision(resp.decision);
   renderTableData(resp.table.rows);
   tableRows = resp.table.rows;
   renderPaginacao(resp.table.page, resp.table.totalPages);
   document.getElementById('tableCount').textContent = '(' + resp.table.totalRows + ' registros)';
   updateSortIcons();
+}
+
+function riskClass(level) {
+  if (level === 'Crítico') return 'danger';
+  if (level === 'Atenção') return 'warning';
+  return 'success';
+}
+
+function renderDecision(d) {
+  if (!d) return;
+  setText('dRisk', d.riskLevel || '—');
+  setText('dRiskScore', 'Score ' + (d.riskScore || 0));
+  setText('dTopClient', d.topClient ? d.topClient.name : '—');
+  setText('dTopClientMeta', d.topClient ? ((d.topClient.total || 0) + ' registros · ' + (d.topClient.pct || 0) + '%') : '—');
+  setText('dTopVersion', d.topVersion ? d.topVersion.name : '—');
+  setText('dTopVersionMeta', d.topVersion ? ((d.topVersion.total || 0) + ' registros · ' + (d.topVersion.semCaminho || 0) + ' sem caminho') : '—');
+  setText('dQuality', (d.dataQuality != null ? d.dataQuality : 0) + '%');
+  setText('dQualityMeta', (d.semCaminho || 0) + ' sem caminho · revisão ' + (d.taxaRevisao || 0) + '%');
+
+  const recEl = document.getElementById('decisionRecs');
+  recEl.innerHTML = (d.recommendations || []).map(r =>
+    '<div class="decision-item">' +
+      '<span class="badge text-bg-' + riskClass(r.level) + '">' + esc(r.level) + '</span>' +
+      '<div><strong>' + esc(r.title) + '</strong><p>' + esc(r.detail) + '</p></div>' +
+    '</div>'
+  ).join('');
+
+  const rowsEl = document.getElementById('decisionClientRows');
+  rowsEl.innerHTML = (d.topClients || []).map(r =>
+    '<tr>' +
+      '<td class="text-truncate" style="max-width:220px">' + esc(r.cliente) + '</td>' +
+      '<td>' + r.total + '</td>' +
+      '<td>' + r.pct + '%</td>' +
+      '<td>' + r.semCaminho + '</td>' +
+      '<td>' + r.taxaRevisao + '%</td>' +
+      '<td><span class="badge text-bg-' + riskClass(r.status) + '">' + esc(r.status) + '</span></td>' +
+    '</tr>'
+  ).join('') || '<tr><td colspan="6" class="text-muted text-center py-3">Sem dados no filtro atual</td></tr>';
+
+  const anomaliesEl = document.getElementById('decisionAnomalies');
+  const anomalies = d.anomalies && d.anomalies.length ? d.anomalies : ['Nenhuma anomalia relevante detectada no recorte atual.'];
+  anomaliesEl.innerHTML = anomalies.map(a =>
+    '<div class="decision-item">' +
+      '<span class="badge text-bg-' + (a.startsWith('Nenhuma') ? 'success' : 'warning') + '">' + (a.startsWith('Nenhuma') ? 'OK' : 'Alerta') + '</span>' +
+      '<div><strong>' + esc(a) + '</strong></div>' +
+    '</div>'
+  ).join('');
+
+  const h = d.health || {};
+  document.getElementById('decisionHealth').innerHTML =
+    '<div class="health-item"><span>Sem caminho</span><strong>' + (h.semCaminho || 0) + '</strong></div>' +
+    '<div class="health-item"><span>Sem cliente</span><strong>' + (h.semCliente || 0) + '</strong></div>' +
+    '<div class="health-item"><span>Sem versão</span><strong>' + (h.semVersao || 0) + '</strong></div>' +
+    '<div class="health-item"><span>Sem requisito</span><strong>' + (h.semRequisito || 0) + '</strong></div>';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -975,6 +1030,7 @@ function applyRelFilter() {
       }
       clearSystemMsg();
       renderRelCharts(resp.charts, resp.reports);
+      renderDecision(resp.decision);
     })
     .withFailureHandler(err => showSystemMsg('danger', 'Erro ao filtrar relatórios: ' + err.message))
     .getDashboardData(JSON.stringify(filters));

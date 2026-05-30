@@ -113,6 +113,87 @@ tr.sem-caminho-row:hover td{background:#ffd0d0 !important}
 .trend-down{color:#dc3545}
 .trend-eq{color:#6c757d}
 
+/* Decision center */
+.decision-card{
+  background:#fff;
+  border:1px solid var(--dash-border);
+  border-radius:12px;
+  box-shadow:var(--dash-shadow-sm);
+  min-height:122px;
+}
+.decision-label{
+  color:var(--dash-muted);
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.decision-value{
+  font-size:1.55rem;
+  font-weight:800;
+  color:#101828;
+  line-height:1.15;
+  margin-top:.45rem;
+}
+.decision-foot{
+  color:var(--dash-muted);
+  font-size:.78rem;
+  margin-top:.45rem;
+}
+.decision-panel .card-title{
+  font-size:.78rem;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  font-weight:700;
+  color:var(--dash-muted)!important;
+}
+.decision-list{display:flex;flex-direction:column;gap:.7rem}
+.decision-item{
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:.65rem;
+  align-items:flex-start;
+  padding:.7rem;
+  border:1px solid #edf1f7;
+  border-radius:10px;
+  background:#fbfcff;
+}
+.decision-item p{
+  margin:.15rem 0 0;
+  color:var(--dash-muted);
+  font-size:.8rem;
+}
+.decision-table thead th{
+  background:#f8fafc;
+  color:#475467;
+  border-bottom:1px solid var(--dash-border);
+  font-size:.7rem;
+}
+.health-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:.8rem;
+}
+.health-item{
+  border:1px solid #edf1f7;
+  border-radius:10px;
+  background:#fbfcff;
+  padding:1rem;
+}
+.health-item span{
+  color:var(--dash-muted);
+  display:block;
+  font-size:.75rem;
+  text-transform:uppercase;
+  font-weight:700;
+}
+.health-item strong{
+  display:block;
+  font-size:1.6rem;
+  color:#101828;
+  margin-top:.2rem;
+}
+
 /* KPI Tab */
 .kpi-card{border:1px solid var(--dash-border);border-radius:12px;box-shadow:var(--dash-shadow-sm);background:#fff}
 .kpi-summary-card{border-radius:10px;padding:1rem 1.2rem;color:#fff;text-align:center}
