@@ -100,6 +100,30 @@ function assertAuthorized_(action) {
   throw new Error("Usuário não autorizado");
 }
 
+function getIgnoredDecisionClients_() {
+  try {
+    const raw = PropertiesService.getUserProperties().getProperty("IGNORED_DECISION_CLIENTS") || "[]";
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean).sort() : [];
+  } catch(e) {
+    return [];
+  }
+}
+
+function saveIgnoredDecisionClients(clientsJson) {
+  try {
+    assertAuthorized_("saveIgnoredDecisionClients");
+    const parsed = JSON.parse(clientsJson || "[]");
+    if (!Array.isArray(parsed)) throw new Error("Lista inválida");
+    const clients = [...new Set(parsed.map(v => String(v || "").trim()).filter(Boolean))].sort();
+    PropertiesService.getUserProperties().setProperty("IGNORED_DECISION_CLIENTS", JSON.stringify(clients));
+    return { ok: true, ignoredClients: clients };
+  } catch(e) {
+    logEvent_("ERROR", "SISTEMA", "saveIgnoredDecisionClients", "Erro ao salvar clientes ignorados", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 // ─── Numeric validation ───────────────────────────────────────────────────────
 function isValidNumberValue(v) {
   if (v === null || v === undefined) return false;
@@ -484,18 +508,38 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
-function buildDecision_(items, reports, rawCharts, today, tz) {
-  const total = items.length;
-  const hoje = items.filter(r => r.dataOrigem === today).length;
-  const semCaminho = items.filter(r => !r.caminho || !r.caminho.trim()).length;
-  const semCliente = items.filter(r => !r.cliente || !r.cliente.trim()).length;
-  const semVersao = items.filter(r => !r.versao || !r.versao.trim()).length;
-  const semRequisito = items.filter(r => !r.requisito || !r.requisito.trim()).length;
-  const comRevisao = items.filter(r => r.revisao && r.revisao.trim()).length;
+function filterDecisionPeriod_(items, period, today, tz) {
+  period = period || "30d";
+  const refParts = String(today || Utilities.formatDate(new Date(), tz, "yyyy-MM-dd")).split("-");
+  const refDate = new Date(Number(refParts[0]), Number(refParts[1]) - 1, Number(refParts[2]));
+  const startDate = new Date(refDate);
+  if (period === "7d") startDate.setDate(startDate.getDate() - 6);
+  else if (period === "15d") startDate.setDate(startDate.getDate() - 14);
+  else if (period === "3m") startDate.setMonth(startDate.getMonth() - 3);
+  else startDate.setDate(startDate.getDate() - 29);
+  const startKey = Utilities.formatDate(startDate, tz, "yyyy-MM-dd");
+  return items.filter(r => r.dataOrigem >= startKey && r.dataOrigem <= today);
+}
+
+function buildDecision_(items, today, tz, ignoredClients, decisionPeriod) {
+  ignoredClients = ignoredClients || [];
+  const ignoredSet = new Set(ignoredClients);
+  const periodItems = filterDecisionPeriod_(items, decisionPeriod, today, tz);
+  const decisionItems = periodItems.filter(r => !ignoredSet.has(r.cliente));
+  const totalOriginal = items.length;
+  const total = decisionItems.length;
+  const hoje = decisionItems.filter(r => r.dataOrigem === today).length;
+  const semCaminho = decisionItems.filter(r => !r.caminho || !r.caminho.trim()).length;
+  const semCliente = decisionItems.filter(r => !r.cliente || !r.cliente.trim()).length;
+  const semVersao = decisionItems.filter(r => !r.versao || !r.versao.trim()).length;
+  const semRequisito = decisionItems.filter(r => !r.requisito || !r.requisito.trim()).length;
+  const comRevisao = decisionItems.filter(r => r.revisao && r.revisao.trim()).length;
   const taxaRevisao = total ? Math.round(comRevisao * 100 / total) : 0;
   const dataQuality = total
     ? Math.max(0, Math.round(100 - ((semCaminho + semCliente + semVersao + semRequisito) * 100 / (total * 4))))
     : 100;
+  const rawCharts = buildCharts_(decisionItems, today, tz);
+  const reports = buildReports_(decisionItems, rawCharts.cliTotalMap, rawCharts.trend30Raw, tz);
 
   const versionMap = {};
   items.forEach(r => {
@@ -556,6 +600,9 @@ function buildDecision_(items, reports, rawCharts, today, tz) {
     recommendations: recommendations.slice(0, 5),
     anomalies, topClients,
     health: { semCaminho, semCliente, semVersao, semRequisito },
+    ignoredClients,
+    ignoredCount: periodItems.length - total,
+    decisionPeriod: decisionPeriod || "30d",
   };
 }
 
@@ -564,7 +611,8 @@ function getDashboardData(filtersJson) {
     assertAuthorized_("getDashboardData");
     const filters = filtersJson ? JSON.parse(filtersJson) : {};
     const cache = CacheService.getScriptCache();
-    const cacheKey = "dashboard:" + Utilities.base64EncodeWebSafe(filtersJson || "{}").substring(0, 180);
+    const ignoredDecisionClients = getIgnoredDecisionClients_();
+    const cacheKey = "dashboard:" + Utilities.base64EncodeWebSafe((filtersJson || "{}") + "|" + ignoredDecisionClients.join("|")).substring(0, 180);
     const cached = cache.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
@@ -584,7 +632,7 @@ function getDashboardData(filtersJson) {
       top10:          rawCharts.top10,
     };
     const reports    = buildReports_(items, rawCharts.cliTotalMap, rawCharts.trend30Raw, tz);
-    const decision   = buildDecision_(items, reports, rawCharts, today, tz);
+    const decision   = buildDecision_(items, today, tz, ignoredDecisionClients, filters.decisionPeriod || "30d");
     const clientList = [...new Set(allItems.map(r => r.cliente).filter(Boolean))].sort();
     const sortCampo  = filters.sortCampo || "dataOrigem";
     const sortDir    = filters.sortDir   || "desc";

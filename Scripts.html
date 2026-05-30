@@ -12,6 +12,8 @@ let selectedRow    = null;
 let kpiAlertTimer  = null;
 let pendingKpiData = null;
 let lastDashResp   = null;   // stores last full dashboard response for report generation
+let ignoredDecisionClients = [];
+let decisionPeriod = '30d';
 
 const INTERVALO_ALERTA = 2 * 60 * 60 * 1000;
 
@@ -88,7 +90,11 @@ function resetLoader() {
 function fetchData() {
   currentPage = 1;
   resetLoader();
-  loadDashboard(currentFilters);
+  loadDashboard(withDecisionPeriod(currentFilters));
+}
+
+function withDecisionPeriod(filters) {
+  return Object.assign({}, filters || {}, { decisionPeriod });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -126,7 +132,7 @@ function applyFilter() {
     sortCampo:  sortState.campo,
     sortDir:    sortState.dir,
   };
-  loadDashboard(currentFilters);
+  loadDashboard(withDecisionPeriod(currentFilters));
 }
 
 function scheduleFilter() {
@@ -171,10 +177,13 @@ function renderAll(resp) {
   setText('cMedia30',    c.media30d);
   setText('cClientes',   c.clientes);
 
-  ['fCliente', 'rFCliente'].forEach(id => {
+  ['fCliente', 'rFCliente', 'decisionIgnoreSelect'].forEach(id => {
     const sel = document.getElementById(id);
+    if (!sel) return;
     const cur = sel.value;
-    sel.innerHTML = '<option value="">Todos</option>';
+    sel.innerHTML = id === 'decisionIgnoreSelect'
+      ? '<option value="">Selecione...</option>'
+      : '<option value="">Todos</option>';
     (resp.clientList || []).forEach(cli => {
       const opt = document.createElement('option');
       opt.value = cli; opt.textContent = cli;
@@ -201,6 +210,11 @@ function riskClass(level) {
 
 function renderDecision(d) {
   if (!d) return;
+  ignoredDecisionClients = d.ignoredClients || [];
+  decisionPeriod = d.decisionPeriod || decisionPeriod || '30d';
+  const periodSel = document.getElementById('decisionPeriodSelect');
+  if (periodSel) periodSel.value = decisionPeriod;
+  updateDecisionPeriodLabel();
   setText('dRisk', d.riskLevel || '—');
   setText('dRiskScore', 'Score ' + (d.riskScore || 0));
   setText('dTopClient', d.topClient ? d.topClient.name : '—');
@@ -245,6 +259,93 @@ function renderDecision(d) {
     '<div class="health-item"><span>Sem cliente</span><strong>' + (h.semCliente || 0) + '</strong></div>' +
     '<div class="health-item"><span>Sem versão</span><strong>' + (h.semVersao || 0) + '</strong></div>' +
     '<div class="health-item"><span>Sem requisito</span><strong>' + (h.semRequisito || 0) + '</strong></div>';
+  renderIgnoredDecisionClients(d);
+}
+
+function renderIgnoredDecisionClients(d) {
+  const wrap = document.getElementById('decisionIgnoredClients');
+  const meta = document.getElementById('decisionIgnoredMeta');
+  if (!wrap || !meta) return;
+  if (!ignoredDecisionClients.length) {
+    wrap.innerHTML = '<span class="text-muted small">Nenhum cliente ignorado.</span>';
+  } else {
+    wrap.innerHTML = ignoredDecisionClients.map(cli =>
+      '<button class="decision-chip" onclick="removeIgnoredDecisionClient(' + JSON.stringify(cli).replace(/"/g, '&quot;') + ')">' +
+        esc(cli) + '<span>×</span>' +
+      '</button>'
+    ).join('');
+  }
+  meta.textContent = (d.ignoredCount || 0) + ' registro(s) fora da análise decisória.';
+}
+
+function saveIgnoredDecisionClients(nextList) {
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (!resp || !resp.ok) {
+        showSystemMsg('warning', 'Erro ao salvar clientes ignorados: ' + (resp ? resp.error : 'sem resposta'));
+        return;
+      }
+      ignoredDecisionClients = resp.ignoredClients || [];
+      fetchData();
+    })
+    .withFailureHandler(err => showSystemMsg('danger', 'Erro ao salvar clientes ignorados: ' + err.message))
+    .saveIgnoredDecisionClients(JSON.stringify(nextList));
+}
+
+function addIgnoredDecisionClient() {
+  const sel = document.getElementById('decisionIgnoreSelect');
+  const cli = sel ? sel.value : '';
+  if (!cli) return;
+  const next = [...new Set([...ignoredDecisionClients, cli])].sort();
+  saveIgnoredDecisionClients(next);
+}
+
+function removeIgnoredDecisionClient(cli) {
+  const next = ignoredDecisionClients.filter(c => c !== cli);
+  saveIgnoredDecisionClients(next);
+}
+
+function formatDecisionDate(value) {
+  if (!value) return '';
+  const parts = value.split('-');
+  if (parts.length !== 3) return value;
+  return parts[2] + '/' + parts[1] + '/' + parts[0];
+}
+
+function getDecisionFilters() {
+  return {
+    period: decisionPeriod,
+    cliente: document.getElementById('rFCliente') ? document.getElementById('rFCliente').value : '',
+  };
+}
+
+function updateDecisionPeriodLabel() {
+  const el = document.getElementById('decisionPeriodLabel');
+  if (!el) return;
+  const f = getDecisionFilters();
+  const periodMap = {
+    '15d': 'últimos 15 dias',
+    '30d': 'últimos 30 dias',
+    '3m': 'últimos 3 meses',
+    '7d': 'últimos 7 dias',
+  };
+  const period = periodMap[f.period] || 'últimos 30 dias';
+  const client = f.cliente ? ' · Cliente: ' + f.cliente : '';
+  el.textContent = 'Período analisado: ' + period + client;
+}
+
+function applyDecisionPeriod() {
+  const sel = document.getElementById('decisionPeriodSelect');
+  decisionPeriod = sel && sel.value ? sel.value : '30d';
+  updateDecisionPeriodLabel();
+  const filters = {
+    cliente:    document.getElementById('rFCliente') ? document.getElementById('rFCliente').value : '',
+    dataInicio: document.getElementById('rFDe') ? document.getElementById('rFDe').value : '',
+    dataFim:    document.getElementById('rFAte') ? document.getElementById('rFAte').value : '',
+    sortCampo:  sortState.campo,
+    sortDir:    sortState.dir,
+  };
+  loadDashboard(withDecisionPeriod(filters));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1019,6 +1120,7 @@ function applyRelFilter() {
     cliente:    document.getElementById('rFCliente').value,
     dataInicio: document.getElementById('rFDe').value,
     dataFim:    document.getElementById('rFAte').value,
+    decisionPeriod,
     sortCampo:  sortState.campo,
     sortDir:    sortState.dir,
   };
