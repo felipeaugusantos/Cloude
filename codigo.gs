@@ -6,6 +6,8 @@ const CONFIG = {
   SHEET_LOG:     "SYS_LOG",
   MAX_ROWS:      10000,
   PAGE_SIZE:     100,
+  CACHE_SECONDS: 120,
+  // ALLOWED_USERS: lista de e-mails separados por vírgula. Se vazio, não restringe acesso.
   // POST_SECRET: defina em Arquivo → Propriedades do projeto (PropertiesService).
 };
 
@@ -73,11 +75,65 @@ function getSpreadsheet_() {
   return SpreadsheetApp.openById(id);
 }
 
+function getScriptProp_(key) {
+  return PropertiesService.getScriptProperties().getProperty(key) || "";
+}
+
+function getActiveUserEmail_() {
+  try { return (Session.getActiveUser().getEmail() || "").toLowerCase().trim(); }
+  catch(e) { return ""; }
+}
+
+function getAllowedUsers_() {
+  return getScriptProp_("ALLOWED_USERS")
+    .split(",")
+    .map(email => email.toLowerCase().trim())
+    .filter(Boolean);
+}
+
+function assertAuthorized_(action) {
+  const allowed = getAllowedUsers_();
+  if (!allowed.length) return;
+  const email = getActiveUserEmail_();
+  if (email && allowed.includes(email)) return;
+  logEvent_("WARN", "AUTH", action || "assertAuthorized_", "Acesso negado", email || "sem email");
+  throw new Error("Usuário não autorizado");
+}
+
 // ─── Numeric validation ───────────────────────────────────────────────────────
 function isValidNumberValue(v) {
   if (v === null || v === undefined) return false;
   if (typeof v === "string" && v.trim() === "") return false;
   return Number.isFinite(Number(v));
+}
+
+function parseSheetDate_(value, tz) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return {
+      dataOrigem: Utilities.formatDate(value, tz, "yyyy-MM-dd"),
+      dataExibicao: Utilities.formatDate(value, tz, "dd/MM/yyyy"),
+    };
+  }
+  const raw = String(value || "").trim();
+  if (!raw) return { dataOrigem: "", dataExibicao: "" };
+
+  let match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return {
+      dataOrigem: match[1] + "-" + match[2] + "-" + match[3],
+      dataExibicao: match[3] + "/" + match[2] + "/" + match[1],
+    };
+  }
+
+  match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (match) {
+    const d = ("0" + match[1]).slice(-2);
+    const m = ("0" + match[2]).slice(-2);
+    const y = match[3];
+    return { dataOrigem: y + "-" + m + "-" + d, dataExibicao: d + "/" + m + "/" + y };
+  }
+
+  return { dataOrigem: "", dataExibicao: "" };
 }
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
@@ -133,7 +189,7 @@ function doPost(e) {
       logEvent_("WARN", "POST", "doPost", "JSON malformado", parseErr.message);
       return jsonResp({ ok: false, error: "Payload inválido" });
     }
-    const secret = PropertiesService.getScriptProperties().getProperty("POST_SECRET") || "";
+    const secret = getScriptProp_("POST_SECRET");
     if (!secret || payload.secret !== secret) {
       logEvent_("WARN", "POST", "doPost", "Secret inválido — acesso negado", "");
       return jsonResp({ ok: false, error: "Não autorizado" });
@@ -259,16 +315,19 @@ function buildAllItems(ss) {
   }
 
   const rows = sheet.getRange(2, 1, last - 1, numCols).getValues();
-  return rows.map(row => ({
-    dataOrigem:   row[colMap.data] instanceof Date ? Utilities.formatDate(row[colMap.data], tz, "yyyy-MM-dd") : "",
-    dataExibicao: row[colMap.data] instanceof Date ? Utilities.formatDate(row[colMap.data], tz, "dd/MM/yyyy") : "",
-    versao:    String(row[colMap.versao]    || ""),
-    requisito: String(row[colMap.requisito] || ""),
-    cliente:   String(row[colMap.cliente]   || ""),
-    status:    String(row[colMap.status]    || ""),
-    caminho:   String(row[colMap.caminho]   || ""),
-    revisao:   String(row[colMap.revisao]   || ""),
-  })).filter(r => r.dataOrigem !== "");
+  return rows.map(row => {
+    const parsedDate = parseSheetDate_(row[colMap.data], tz);
+    return {
+      dataOrigem:   parsedDate.dataOrigem,
+      dataExibicao: parsedDate.dataExibicao,
+      versao:    String(row[colMap.versao]    || ""),
+      requisito: String(row[colMap.requisito] || ""),
+      cliente:   String(row[colMap.cliente]   || ""),
+      status:    String(row[colMap.status]    || ""),
+      caminho:   String(row[colMap.caminho]   || ""),
+      revisao:   String(row[colMap.revisao]   || ""),
+    };
+  }).filter(r => r.dataOrigem !== "");
 }
 
 function applyFilters(items, filters) {
@@ -427,7 +486,13 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 function getDashboardData(filtersJson) {
   try {
+    assertAuthorized_("getDashboardData");
     const filters = filtersJson ? JSON.parse(filtersJson) : {};
+    const cache = CacheService.getScriptCache();
+    const cacheKey = "dashboard:" + Utilities.base64EncodeWebSafe(filtersJson || "{}").substring(0, 180);
+    const cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
     const ss      = getSpreadsheet_();
     const tz      = ss.getSpreadsheetTimeZone();
     const today   = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd");
@@ -451,11 +516,13 @@ function getDashboardData(filtersJson) {
     const pageRows   = sorted.slice(0, CONFIG.PAGE_SIZE);
     const totalPages = Math.ceil(sorted.length / CONFIG.PAGE_SIZE);
 
-    return {
+    const response = {
       ok: true, cards, charts, reports,
       table: { rows: pageRows, totalPages, totalRows: sorted.length, page: 1 },
       clientList,
     };
+    cache.put(cacheKey, JSON.stringify(response), CONFIG.CACHE_SECONDS);
+    return response;
   } catch(e) {
     logEvent_("ERROR", "SISTEMA", "getDashboardData", "Erro no dashboard", e.message);
     return { ok: false, error: e.message };
@@ -465,6 +532,7 @@ function getDashboardData(filtersJson) {
 // ─── Paginated table ──────────────────────────────────────────────────────────
 function getTableData(page, filtersJson) {
   try {
+    assertAuthorized_("getTableData");
     const filters = filtersJson ? JSON.parse(filtersJson) : {};
     const ss = getSpreadsheet_();
     let items = applyFilters(buildAllItems(ss), filters);
@@ -484,6 +552,7 @@ function getTableData(page, filtersJson) {
 // ─── CSV Export ───────────────────────────────────────────────────────────────
 function exportCSVData(filtersJson) {
   try {
+    assertAuthorized_("exportCSVData");
     const filters = filtersJson ? JSON.parse(filtersJson) : {};
     const ss = getSpreadsheet_();
     let items = applyFilters(buildAllItems(ss), filters);
@@ -502,9 +571,69 @@ function exportCSVData(filtersJson) {
 }
 
 // ─── KPI Save ─────────────────────────────────────────────────────────────────
+function hashPayload_(jsonString) {
+  try {
+    const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, jsonString || "");
+    return digest.map(b => ("0" + (b & 0xFF).toString(16)).slice(-2)).join("");
+  } catch(e) {
+    return "";
+  }
+}
+
+function legacySessionIdFromTs_(ts) {
+  const clean = String(ts || "").replace(/[^0-9]/g, "");
+  return "LEGADO_" + (clean || Utilities.getUuid());
+}
+
+function isKPIHistoricoNewFormat_(sheet) {
+  if (!sheet || sheet.getLastRow() === 0) return false;
+  const firstHeader = String(sheet.getRange(1, 1).getValue() || "").toUpperCase().trim();
+  return firstHeader === "SESSION_ID";
+}
+
+function ensureKPIHistoricoNewFormat_(ss) {
+  let sheet = ss.getSheetByName(CONFIG.SHEET_KPI);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SHEET_KPI);
+    sheet.getRange(1, 1, 1, KPI_HEADER.length).setValues([KPI_HEADER]);
+    try { sheet.setFrozenRows(1); } catch(e) {}
+    return sheet;
+  }
+
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, KPI_HEADER.length).setValues([KPI_HEADER]);
+    try { sheet.setFrozenRows(1); } catch(e) {}
+    return sheet;
+  }
+
+  if (isKPIHistoricoNewFormat_(sheet)) return sheet;
+
+  const tz = ss.getSpreadsheetTimeZone();
+  const lastRow = sheet.getLastRow();
+  sheet.insertColumnBefore(1);
+  sheet.getRange(1, 1, 1, KPI_HEADER.length).setValues([KPI_HEADER]);
+  try { sheet.setFrozenRows(1); } catch(e) {}
+
+  if (lastRow >= 2) {
+    const tsValues = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+    const sessionValues = tsValues.map(row => {
+      const raw = row[0];
+      const ts = raw instanceof Date
+        ? Utilities.formatDate(raw, tz, "yyyy-MM-dd HH:mm:ss")
+        : String(raw || "").trim();
+      return [legacySessionIdFromTs_(ts)];
+    });
+    sheet.getRange(2, 1, sessionValues.length, 1).setValues(sessionValues);
+  }
+
+  logEvent_("INFO", "SISTEMA", "ensureKPIHistoricoNewFormat_",
+    "KPI_Historico migrado para schema com SESSION_ID", "linhas=" + Math.max(0, lastRow - 1));
+  return sheet;
+}
+
 function saveKPIDataManual(jsonString, origem) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  let locked = false;
 
   // Declare all vars before try so catch block can reference them for audit logging.
   // Initialization happens inside try to keep lock always released via finally.
@@ -513,6 +642,10 @@ function saveKPIDataManual(jsonString, origem) {
   let   hashPayload = "";
 
   try {
+    if (origemStr !== "POST") assertAuthorized_("saveKPIDataManual");
+    lock.waitLock(30000);
+    locked = true;
+
     ss        = getSpreadsheet_();
     tz        = ss.getSpreadsheetTimeZone();
     ts        = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
@@ -520,26 +653,8 @@ function saveKPIDataManual(jsonString, origem) {
     const data = JSON.parse(jsonString);
     if (!Array.isArray(data) || data.length === 0) throw new Error("JSON inválido ou vazio");
 
-    try {
-      const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, jsonString);
-      hashPayload  = digest.map(b => ("0" + (b & 0xFF).toString(16)).slice(-2)).join("").substring(0, 16);
-    } catch(e) {}
-
-    // Detect format of existing KPI sheet
-    let kpiSheet   = ss.getSheetByName(CONFIG.SHEET_KPI);
-    let useNewFormat = true;
-
-    if (kpiSheet && kpiSheet.getLastRow() > 0) {
-      const h0 = String(kpiSheet.getRange(1,1,1,1).getValues()[0][0] || "").toUpperCase().trim();
-      useNewFormat = (h0 === "SESSION_ID");
-    }
-
-    if (!kpiSheet) kpiSheet = ss.insertSheet(CONFIG.SHEET_KPI);
-    if (kpiSheet.getLastRow() === 0) {
-      const hdr = useNewFormat ? KPI_HEADER : KPI_HEADER.slice(1);
-      kpiSheet.getRange(1, 1, 1, hdr.length).setValues([hdr]);
-      try { kpiSheet.setFrozenRows(1); } catch(e) {}
-    }
+    hashPayload = hashPayload_(jsonString).substring(0, 16);
+    const kpiSheet = ensureKPIHistoricoNewFormat_(ss);
 
     const requiredFields = KPI_HEADER.slice(2); // exclude SESSION_ID and TIMESTAMP
     const rows = data.map((item, idx) => {
@@ -569,12 +684,11 @@ function saveKPIDataManual(jsonString, origem) {
         String(item.SEMAFORO_CORRIGINDO_CORRIGIDO  || ""),
         String(item.SEMAFORO_CONFERIDO             || ""),
       ];
-      return useNewFormat ? [sessionId, ts, ...baseRow] : [ts, ...baseRow];
+      return [sessionId, ts, ...baseRow];
     });
 
-    const colCount = useNewFormat ? 15 : 14;
     const lastRow  = Math.max(kpiSheet.getLastRow(), 1);
-    kpiSheet.getRange(lastRow + 1, 1, rows.length, colCount).setValues(rows);
+    kpiSheet.getRange(lastRow + 1, 1, rows.length, KPI_HEADER.length).setValues(rows);
 
     // Audit record
     const sessoesSheet = ensureSheet_(ss, CONFIG.SHEET_SESSOES, SESSOES_HEADER);
@@ -593,13 +707,16 @@ function saveKPIDataManual(jsonString, origem) {
     logEvent_("ERROR", origemStr, "saveKPIDataManual", "Erro ao salvar KPI", e.message);
     return { ok: false, error: e.message };
   } finally {
-    lock.releaseLock();
+    if (locked) {
+      try { lock.releaseLock(); } catch(e) {}
+    }
   }
 }
 
 // ─── KPI History ──────────────────────────────────────────────────────────────
 function getKPIHistorySessions() {
   try {
+    assertAuthorized_("getKPIHistorySessions");
     const ss      = getSpreadsheet_();
     const tz      = ss.getSpreadsheetTimeZone();
     const sessions = [];
@@ -659,6 +776,7 @@ function getKPIHistorySessions() {
 
 function getKPIDataBySession(identifier) {
   try {
+    assertAuthorized_("getKPIDataBySession");
     const ss    = getSpreadsheet_();
     const sheet = ss.getSheetByName(CONFIG.SHEET_KPI);
     if (!sheet || sheet.getLastRow() < 2) return { ok: true, data: [] };
@@ -668,19 +786,24 @@ function getKPIDataBySession(identifier) {
     const headerRow    = sheet.getRange(1, 1, 1, Math.min(numCols, 2)).getValues()[0];
     const hasSessionId = String(headerRow[0] || "").toUpperCase().trim() === "SESSION_ID";
 
-    // If identifier is a UUID but sheet is legacy, resolve via KPI_Sessoes
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    let lookupKey = identifier;
-    if (!hasSessionId && UUID_RE.test(identifier)) {
-      const sessoesSheet = ss.getSheetByName(CONFIG.SHEET_SESSOES);
-      if (sessoesSheet && sessoesSheet.getLastRow() >= 2) {
-        const sessoesRows = sessoesSheet.getRange(2, 1, sessoesSheet.getLastRow() - 1, 2).getValues();
-        const found = sessoesRows.find(row => String(row[0]) === identifier);
-        if (found) {
-          lookupKey = found[1] instanceof Date
-            ? Utilities.formatDate(found[1], tz, "yyyy-MM-dd HH:mm:ss")
-            : String(found[1] || "").trim();
-        }
+    const lookupKeys = {};
+    const addLookupKey = key => {
+      key = String(key || "").trim();
+      if (key) lookupKeys[key] = true;
+    };
+
+    addLookupKey(identifier);
+
+    const sessoesSheet = ss.getSheetByName(CONFIG.SHEET_SESSOES);
+    if (sessoesSheet && sessoesSheet.getLastRow() >= 2) {
+      const sessoesRows = sessoesSheet.getRange(2, 1, sessoesSheet.getLastRow() - 1, 2).getValues();
+      const found = sessoesRows.find(row => String(row[0] || "").trim() === String(identifier || "").trim());
+      if (found) {
+        const sessionTs = found[1] instanceof Date
+          ? Utilities.formatDate(found[1], tz, "yyyy-MM-dd HH:mm:ss")
+          : String(found[1] || "").trim();
+        addLookupKey(sessionTs);
+        addLookupKey(legacySessionIdFromTs_(sessionTs));
       }
     }
 
@@ -691,12 +814,12 @@ function getKPIDataBySession(identifier) {
         const ts  = row[1] instanceof Date
           ? Utilities.formatDate(row[1], tz, "yyyy-MM-dd HH:mm:ss")
           : String(row[1] || "").trim();
-        return sid === lookupKey || ts === lookupKey;
+        return !!(lookupKeys[sid] || lookupKeys[ts] || lookupKeys[legacySessionIdFromTs_(ts)]);
       }
       const ts = row[0] instanceof Date
         ? Utilities.formatDate(row[0], tz, "yyyy-MM-dd HH:mm:ss")
         : String(row[0] || "").trim();
-      return ts === lookupKey;
+      return !!(lookupKeys[ts] || lookupKeys[legacySessionIdFromTs_(ts)]);
     }).map(row => parseKpiRow_(row, hasSessionId, tz));
 
     return { ok: true, data: rows };
@@ -708,10 +831,15 @@ function getKPIDataBySession(identifier) {
 
 function getLastKPI() {
   try {
+    assertAuthorized_("getLastKPI");
     const sessRes = getKPIHistorySessions();
     if (!sessRes.ok) return sessRes;
-    if (!sessRes.sessions.length) return { ok: true, data: [], session: null, sessionId: null, sessions: [] };
-    const lastSess = sessRes.sessions[0];
+    const successSessions = (sessRes.sessions || [])
+      .filter(s => String(s.status || "SUCESSO").toUpperCase() === "SUCESSO");
+    if (!successSessions.length) {
+      return { ok: true, data: [], session: null, sessionId: null, sessions: sessRes.sessions || [] };
+    }
+    const lastSess = successSessions[0];
     const dataRes  = getKPIDataBySession(lastSess.id);
     if (!dataRes.ok) return dataRes;
     return {
@@ -730,6 +858,7 @@ function getLastKPI() {
 // getKPITrendData — lê a planilha uma única vez para evitar leituras repetidas
 function getKPITrendData() {
   try {
+    assertAuthorized_("getKPITrendData");
     const sessRes = getKPIHistorySessions();
     if (!sessRes.ok || !sessRes.sessions.length) return { ok: true, trend: [] };
 
@@ -748,20 +877,30 @@ function getKPITrendData() {
     // Build lookup map: session key → parsed rows
     const byKey = {};
     allRaw.forEach(row => {
-      let key;
+      const parsed = parseKpiRow_(row, hasSessionId, tz);
+      const keys = [];
       if (hasSessionId) {
-        key = String(row[0] || "").trim(); // SESSION_ID
+        keys.push(String(row[0] || "").trim());
+        keys.push(parsed.TIMESTAMP);
+        keys.push(legacySessionIdFromTs_(parsed.TIMESTAMP));
       } else {
-        key = row[0] instanceof Date
+        const ts = row[0] instanceof Date
           ? Utilities.formatDate(row[0], tz, "yyyy-MM-dd HH:mm:ss")
           : String(row[0] || "").trim();
+        keys.push(ts);
+        keys.push(legacySessionIdFromTs_(ts));
       }
-      if (!key) return;
-      if (!byKey[key]) byKey[key] = [];
-      byKey[key].push(parseKpiRow_(row, hasSessionId, tz));
+      keys.forEach(key => {
+        if (!key) return;
+        if (!byKey[key]) byKey[key] = [];
+        byKey[key].push(parsed);
+      });
     });
 
-    const last10 = sessRes.sessions.slice(0, 10).reverse();
+    const last10 = sessRes.sessions
+      .filter(s => String(s.status || "SUCESSO").toUpperCase() === "SUCESSO")
+      .slice(0, 10)
+      .reverse();
     const trend  = [];
 
     for (const sess of last10) {

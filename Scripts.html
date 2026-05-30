@@ -58,10 +58,26 @@ function showErr(msg) {
 // Init
 // ═══════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
+  setupTabTransitions();
   fetchData();
   startKPIReminder();
   setInterval(fetchData, 5 * 60 * 1000);
 });
+
+function setupTabTransitions() {
+  const tabContent = document.querySelector('.dashboard-tab-content');
+  const tabs = document.querySelectorAll('#mainTabs [data-bs-toggle="tab"]');
+  if (!tabContent || !tabs.length) return;
+
+  tabs.forEach(tab => {
+    tab.addEventListener('show.bs.tab', () => {
+      tabContent.classList.add('tab-switching');
+    });
+    tab.addEventListener('shown.bs.tab', () => {
+      window.setTimeout(() => tabContent.classList.remove('tab-switching'), 90);
+    });
+  });
+}
 
 function resetLoader() {
   const loader = document.getElementById('globalLoader');
@@ -773,7 +789,7 @@ function validarJSON() {
   });
 
   if (errors.length) {
-    showKpiError('<ul class="mb-0">' + errors.map(e => '<li>' + esc(e) + '</li>').join('') + '</ul>');
+    showKpiError('<ul class="mb-0">' + errors.map(e => '<li>' + esc(e) + '</li>').join('') + '</ul>', true);
     return;
   }
 
@@ -800,9 +816,10 @@ function validarJSON() {
   new bootstrap.Modal(document.getElementById('kpiValidModal')).show();
 }
 
-function showKpiError(html) {
+function showKpiError(message, trustedHtml) {
   const errDiv = document.getElementById('kpiValidErrors');
-  errDiv.innerHTML = html;
+  if (trustedHtml) errDiv.innerHTML = message;
+  else errDiv.textContent = message;
   errDiv.classList.remove('d-none');
   new bootstrap.Modal(document.getElementById('kpiValidModal')).show();
 }
