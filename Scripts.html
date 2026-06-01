@@ -1151,6 +1151,14 @@ function clearRelFilters() {
 // ═══════════════════════════════════════════════════════════════════════════
 var opePendingJson = null;
 
+// Normalize all keys in a JSON object to UPPERCASE so DB tools that return
+// lowercase/mixed-case field names (ope_logope, Ope_Logope, etc.) still match.
+function normalizeKeys(item) {
+  var out = {};
+  Object.keys(item).forEach(function(k) { out[k.toUpperCase()] = item[k]; });
+  return out;
+}
+
 function validateOpeJson() {
   var raw = (document.getElementById('opeJsonInput').value || '').trim();
   if (!raw) { showSystemMsg('warning', 'Cole o JSON antes de validar.'); return; }
@@ -1161,6 +1169,9 @@ function validateOpeJson() {
     return;
   }
   if (!Array.isArray(data)) data = [data];
+
+  // Normalize keys to UPPERCASE
+  data = data.map(normalizeKeys);
 
   var errors = [];
   var valid  = [];
@@ -1237,6 +1248,9 @@ function validateReqJson() {
     return;
   }
   if (!Array.isArray(data)) data = [data];
+
+  // Normalize keys to UPPERCASE
+  data = data.map(normalizeKeys);
 
   var COLS = ['ALT_DTATST','ALT_VERDDL','OPE_CONFER','TOTAL_SEM_RETORNO','TOTAL_COM_RETORNO',
               'TOTAL_COM_E_SEM_RETORNO','TOTAL_REQ_RETORNO','REQ_BAI_RETORNO',
@@ -1522,6 +1536,9 @@ function validateCadOpeJson() {
     showSystemMsg('danger', 'JSON inválido: ' + e.message); return;
   }
   if (!Array.isArray(data)) data = [data];
+
+  // Normalize keys to UPPERCASE
+  data = data.map(normalizeKeys);
 
   var errors = [];
   var valid  = [];

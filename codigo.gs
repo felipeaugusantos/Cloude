@@ -1075,6 +1075,13 @@ function saveReqData(jsonString) {
     }
     if (!Array.isArray(data)) data = [data];
 
+    // Normalize all keys to UPPERCASE so lowercase/mixed-case DB exports work
+    data = data.map(function(item) {
+      var norm = {};
+      Object.keys(item).forEach(function(k) { norm[k.toUpperCase()] = item[k]; });
+      return norm;
+    });
+
     const REQUIRED = ["ALT_DTATST","ALT_VERDDL","OPE_CONFER"];
     const errors   = [];
     const rows     = [];
@@ -1281,9 +1288,12 @@ function saveOperadores(jsonString) {
     const errors = [];
     const rows   = [];
     data.forEach(function(item, idx) {
-      const code = String(item.OPE_LOGOPE || "").trim();
+      // Normalize keys to UPPERCASE so lowercase/mixed-case DB exports work
+      const norm = {};
+      Object.keys(item).forEach(function(k) { norm[k.toUpperCase()] = item[k]; });
+      const code = String(norm.OPE_LOGOPE || "").trim();
       if (!code) { errors.push("Linha " + (idx+1) + ": OPE_LOGOPE ausente"); return; }
-      rows.push([code.toUpperCase(), String(item.OPE_DESCRI || ""), ts]);
+      rows.push([code.toUpperCase(), String(norm.OPE_DESCRI || ""), ts]);
     });
 
     if (errors.length) return { ok: false, error: errors.join("\n") };
