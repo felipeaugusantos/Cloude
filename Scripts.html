@@ -1548,6 +1548,17 @@ function renderTestesCards(cards) {
   document.getElementById('testesCPerc').textContent  = (cards.percCom    || 0) + '%';
 }
 
+function wrapChartLabel(value, maxLength) {
+  var words = String(value || '').split(/\s+/).filter(Boolean);
+  var lines = [];
+  words.forEach(function(word) {
+    var last = lines[lines.length - 1];
+    if (!last || (last + ' ' + word).length > maxLength) lines.push(word);
+    else lines[lines.length - 1] += ' ' + word;
+  });
+  return lines;
+}
+
 function renderTestesCharts(byVersao, byOperador, byCelula) {
   // By versao
   destroyChart('testesVersao');
@@ -1571,13 +1582,13 @@ function renderTestesCharts(byVersao, byOperador, byCelula) {
     charts['testesOperador'] = new Chart(document.getElementById('chartTestesOperador'), {
       type: 'bar',
       data: {
-        labels: byOperador.map(function(r){ return r.nome || r.operador; }),
+        labels: byOperador.map(function(r){ return wrapChartLabel(r.nome || r.operador, 20); }),
         datasets: [
           { label:'Com Teste', data:byOperador.map(function(r){ return r.com; }), backgroundColor:'rgba(25,135,84,.75)',  stack:'s' },
           { label:'Sem Teste', data:byOperador.map(function(r){ return r.sem; }), backgroundColor:'rgba(220,53,69,.75)',  stack:'s' },
         ],
       },
-      options: { responsive:true, indexAxis:'y', plugins:{ legend:{position:'bottom'} }, scales:{ x:{stacked:true}, y:{stacked:true} } },
+      options: { responsive:true, indexAxis:'y', plugins:{ legend:{position:'bottom'} }, scales:{ x:{stacked:true}, y:{stacked:true,ticks:{font:{size:10}}} } },
     });
   }
 
