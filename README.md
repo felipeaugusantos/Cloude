@@ -148,3 +148,27 @@ Cole um array JSON na aba `Cadastro Operadores`. A importacao substitui o cadast
   }
 ]
 ```
+
+## Visao Gerencial do KPI Tester
+
+A entrada padrao do `KPI TESTER` e a aba `Visao Gerencial`. Ela combina os snapshots mais recentes de retorno de requisitos e testes de copias para destacar:
+
+- percentual com retorno e percentual com teste
+- pendencias totais, sem retorno e sem teste
+- operadores criticos e operadores com maior volume pendente
+- versoes com maior concentracao de pendencias
+- recomendacoes prioritarias para atuacao operacional
+
+A tela segue uma composicao de BI com filtro de ano e periodo, cards executivos e graficos de:
+
+- evolucao mensal e variacao mes a mes
+- volume por celula e operador
+- medias por dia util
+- requisitos baixados por versao
+
+Os dashboards de retorno e testes usam automaticamente a ultima sessao valida importada. Isso evita somar snapshots historicos e inflar os indicadores. As sessoes anteriores continuam disponiveis na lateral para consulta e auditoria.
+
+As importacoes rejeitam valores negativos e totais inconsistentes:
+
+- retorno: `TOTAL_COM_E_SEM_RETORNO = TOTAL_SEM_RETORNO + TOTAL_COM_RETORNO`
+- testes: `TOTAL = TOTAL_COM_TESTE + TOTAL_SEM_TESTE`

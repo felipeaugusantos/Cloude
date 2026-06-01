@@ -1055,6 +1055,14 @@ const REQ_HEADER = [
 const REQ_NUMERIC_FIELDS = ["TOTAL_SEM_RETORNO","TOTAL_COM_RETORNO","TOTAL_COM_E_SEM_RETORNO","TOTAL_REQ_RETORNO"];
 const REQ_SESSOES_HEADER = ["SESSION_ID","TIMESTAMP","TOTAL_REGISTROS","STATUS","ERRO"];
 
+function getLatestOkSessionId_(sheet) {
+  const data = sheet.getDataRange().getValues();
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][3] || "").toUpperCase() === "OK") return String(data[i][0] || "");
+  }
+  return "";
+}
+
 // ─── Save REQ return data from JSON import ────────────────────────────────────
 function saveReqData(jsonString) {
   const lock = LockService.getScriptLock();
@@ -1105,16 +1113,28 @@ function saveReqData(jsonString) {
         errors.push("Linha " + (idx+1) + ": valor inválido em: " + invalidNum.join(", "));
         return;
       }
+      const semRetorno = Number(item.TOTAL_SEM_RETORNO);
+      const comRetorno = Number(item.TOTAL_COM_RETORNO);
+      const total      = Number(item.TOTAL_COM_E_SEM_RETORNO);
+      const totalReq   = Number(item.TOTAL_REQ_RETORNO);
+      if ([semRetorno, comRetorno, total, totalReq].some(function(v) { return v < 0; })) {
+        errors.push("Linha " + (idx+1) + ": valores numéricos não podem ser negativos");
+        return;
+      }
+      if (total !== semRetorno + comRetorno) {
+        errors.push("Linha " + (idx+1) + ": TOTAL_COM_E_SEM_RETORNO deve ser igual a TOTAL_SEM_RETORNO + TOTAL_COM_RETORNO");
+        return;
+      }
       rows.push([
         sessionId,
         ts,
         String(item.ALT_DTATST   || ""),
         String(item.ALT_VERDDL   || ""),
         String(item.OPE_CONFER   || ""),
-        isValidNumberValue(item.TOTAL_SEM_RETORNO)       ? Number(item.TOTAL_SEM_RETORNO)       : 0,
-        isValidNumberValue(item.TOTAL_COM_RETORNO)       ? Number(item.TOTAL_COM_RETORNO)       : 0,
-        isValidNumberValue(item.TOTAL_COM_E_SEM_RETORNO) ? Number(item.TOTAL_COM_E_SEM_RETORNO) : 0,
-        isValidNumberValue(item.TOTAL_REQ_RETORNO)       ? Number(item.TOTAL_REQ_RETORNO)       : 0,
+        semRetorno,
+        comRetorno,
+        total,
+        totalReq,
         String(item.REQ_BAI_RETORNO              || "0"),
         String(item.REQUISITOS_BAIXOS_SEMRETORNO || ""),
         String(item.RETORNO_REQUISITOS           || "Não"),
@@ -1149,7 +1169,7 @@ function getReqDashboard(filtersJson) {
     var filters = filtersJson ? JSON.parse(filtersJson) : {};
     var ss      = getSpreadsheet_();
     var tz      = ss.getSpreadsheetTimeZone();
-    var EMPTY   = { ok:true, sessions:[], cards:{total:0,semRetorno:0,comRetorno:0,totalCopias:0,percCom:0}, byVersao:[], byOperador:[], versaoList:[], operadorList:[], rows:[] };
+    var EMPTY   = { ok:true, sessions:[], activeSessionId:"", cards:{total:0,semRetorno:0,comRetorno:0,totalCopias:0,percCom:0}, byVersao:[], byOperador:[], versaoList:[], operadorList:[], rows:[] };
 
     // Load sessions
     var sheetSess = ensureSheet_(ss, "REQ_Sessoes", REQ_SESSOES_HEADER);
@@ -1172,7 +1192,8 @@ function getReqDashboard(filtersJson) {
     var ci  = {};
     REQ_HEADER.forEach(function(col, idx) { ci[col] = hdr.indexOf(col); if (ci[col]<0) ci[col]=idx; });
 
-    var sessionFilter = filters.sessionId || null;
+    var sessionFilter = filters.sessionId || getLatestOkSessionId_(sheetSess) || null;
+    EMPTY.activeSessionId = sessionFilter || "";
     var items = [];
 
     for (var i = 1; i < rawData.length; i++) {
@@ -1268,6 +1289,7 @@ function getReqDashboard(filtersJson) {
     return {
       ok:           true,
       sessions:     sessions,
+      activeSessionId: sessionFilter || "",
       cards:        { total:totalReg, semRetorno:semRetorno, comRetorno:comRetorno, totalCopias:totalCopias, percCom:percCom },
       byVersao:     byVersao,
       byOperador:   byOperador,
@@ -1340,14 +1362,25 @@ function saveTestes(jsonString) {
         errors.push("Linha " + (idx+1) + ": valor inválido em: " + invalidNum.join(", "));
         return;
       }
+      const total    = Number(item.TOTAL);
+      const comTeste = Number(item.TOTAL_COM_TESTE);
+      const semTeste = Number(item.TOTAL_SEM_TESTE);
+      if ([total, comTeste, semTeste].some(function(v) { return v < 0; })) {
+        errors.push("Linha " + (idx+1) + ": valores numéricos não podem ser negativos");
+        return;
+      }
+      if (total !== comTeste + semTeste) {
+        errors.push("Linha " + (idx+1) + ": TOTAL deve ser igual a TOTAL_COM_TESTE + TOTAL_SEM_TESTE");
+        return;
+      }
       rows.push([
         sessionId, ts,
         String(item.ALT_DTATST         || ""),
         String(item.ALT_VERDDL         || ""),
         String(item.OPE_CONFER         || ""),
-        isValidNumberValue(item.TOTAL)           ? Number(item.TOTAL)           : 0,
-        isValidNumberValue(item.TOTAL_COM_TESTE) ? Number(item.TOTAL_COM_TESTE) : 0,
-        isValidNumberValue(item.TOTAL_SEM_TESTE) ? Number(item.TOTAL_SEM_TESTE) : 0,
+        total,
+        comTeste,
+        semTeste,
         String(item.REQUISITOS_BAIXADOS || ""),
         String(item.CODIGO_TIPO         || ""),
         String(item.DESCRICAO_CELULA    || "SEM CELULA"),
@@ -1409,7 +1442,7 @@ function getTestesDashboard(filtersJson) {
 
     var sheetTst = ensureSheet_(ss, "TESTES_Historico", TESTES_HEADER);
     var rawData  = sheetTst.getDataRange().getValues();
-    var EMPTY    = { ok:true, sessions:sessions, cards:{total:0,comTeste:0,semTeste:0,totalCopias:0,percCom:0},
+    var EMPTY    = { ok:true, sessions:sessions, activeSessionId:"", cards:{total:0,comTeste:0,semTeste:0,totalCopias:0,percCom:0},
                      byVersao:[], byOperador:[], byCelula:[], versaoList:[], operadorList:[], celulaList:[], opeNames:opeNamesMap, rows:[] };
     if (rawData.length <= 1) return EMPTY;
 
@@ -1417,7 +1450,8 @@ function getTestesDashboard(filtersJson) {
     var ci  = {};
     TESTES_HEADER.forEach(function(col,idx){ ci[col]=hdr.indexOf(col); if(ci[col]<0) ci[col]=idx; });
 
-    var sessionFilter = filters.sessionId || null;
+    var sessionFilter = filters.sessionId || getLatestOkSessionId_(sheetSessT) || null;
+    EMPTY.activeSessionId = sessionFilter || "";
     var items = [];
 
     for (var i = 1; i < rawData.length; i++) {
@@ -1477,12 +1511,158 @@ function getTestesDashboard(filtersJson) {
     var operadorList = [...new Set(items.map(function(r){ return r.operador; }).filter(Boolean))].sort();
     var celulaList   = [...new Set(items.map(function(r){ return r.celula;   }).filter(Boolean))].sort();
 
-    return { ok:true, sessions:sessions, cards:{total:totalReg,comTeste:comTeste,semTeste:semTeste,totalCopias:totalCopias,percCom:percCom},
+    return { ok:true, sessions:sessions, activeSessionId:sessionFilter || "", cards:{total:totalReg,comTeste:comTeste,semTeste:semTeste,totalCopias:totalCopias,percCom:percCom},
              byVersao:byVersao, byOperador:byOperador, byCelula:byCelula,
              versaoList:versaoList, operadorList:operadorList, celulaList:celulaList,
              opeNames:opeNamesMap, rows:items };
   } catch(e) {
     logEvent_("ERROR","TESTES","getTestesDashboard","Erro ao carregar dashboard",e.message);
+    return { ok:false, error:e.message };
+  }
+}
+
+function getKpiTesterManagementDashboard(filtersJson) {
+  try {
+    assertAuthorized_("getKpiTesterManagementDashboard");
+    const filters = filtersJson ? JSON.parse(filtersJson) : {};
+    const ss = getSpreadsheet_();
+    const reqSessionsSheet = ensureSheet_(ss, "REQ_Sessoes", REQ_SESSOES_HEADER);
+    const testSessionsSheet = ensureSheet_(ss, "TESTES_Sessoes", TESTES_SESSOES_HEADER);
+    const reqSessionId = getLatestOkSessionId_(reqSessionsSheet);
+    const testSessionId = getLatestOkSessionId_(testSessionsSheet);
+    const dashboardFilters = {
+      sessionId: "",
+      dataInicio: filters.dataInicio || "",
+      dataFim: filters.dataFim || "",
+    };
+    const req = getReqDashboard(JSON.stringify(Object.assign({}, dashboardFilters, { sessionId:reqSessionId })));
+    const testes = getTestesDashboard(JSON.stringify(Object.assign({}, dashboardFilters, { sessionId:testSessionId })));
+
+    if (!req.ok) return req;
+    if (!testes.ok) return testes;
+
+    const reqLatest = (req.sessions || []).find(function(s) { return s.id === reqSessionId; }) || {};
+    const testLatest = (testes.sessions || []).find(function(s) { return s.id === testSessionId; }) || {};
+    const operatorMap = {};
+
+    function ensureOperator(code, name) {
+      const key = (String(code || "SEM OPERADOR").trim() || "SEM OPERADOR").toUpperCase();
+      if (!operatorMap[key]) {
+        operatorMap[key] = { operador:key, nome:name || "", semRetorno:0, semTeste:0, totalRetorno:0, totalTeste:0 };
+      }
+      if (!operatorMap[key].nome && name) operatorMap[key].nome = name;
+      return operatorMap[key];
+    }
+
+    (req.byOperador || []).forEach(function(item) {
+      const op = ensureOperator(item.operador, item.nome);
+      op.semRetorno += Number(item.sem || 0);
+      op.totalRetorno += Number(item.total || 0);
+    });
+    (testes.byOperador || []).forEach(function(item) {
+      const op = ensureOperator(item.operador, item.nome);
+      op.semTeste += Number(item.sem || 0);
+      op.totalTeste += Number(item.total || 0);
+    });
+
+    const operatorPriorities = Object.values(operatorMap).map(function(op) {
+      const pendencias = op.semRetorno + op.semTeste;
+      const retornoPerc = op.totalRetorno > 0 ? Math.round((op.totalRetorno - op.semRetorno) * 100 / op.totalRetorno) : 0;
+      const testesPerc = op.totalTeste > 0 ? Math.round((op.totalTeste - op.semTeste) * 100 / op.totalTeste) : 0;
+      const status = pendencias === 0 ? "OK" : (op.semRetorno > 0 && op.semTeste > 0 ? "Crítico" : "Atenção");
+      return Object.assign({}, op, { pendencias:pendencias, retornoPerc:retornoPerc, testesPerc:testesPerc, status:status });
+    }).sort(function(a,b) { return b.pendencias - a.pendencias; });
+
+    const versionMap = {};
+    function ensureVersion(version) {
+      const key = String(version || "SEM VERSÃO").trim() || "SEM VERSÃO";
+      if (!versionMap[key]) versionMap[key] = { versao:key, semRetorno:0, semTeste:0, pendencias:0 };
+      return versionMap[key];
+    }
+    (req.byVersao || []).forEach(function(item) { ensureVersion(item.versao).semRetorno += Number(item.sem || 0); });
+    (testes.byVersao || []).forEach(function(item) { ensureVersion(item.versao).semTeste += Number(item.sem || 0); });
+    const criticalVersions = Object.values(versionMap).map(function(item) {
+      item.pendencias = item.semRetorno + item.semTeste;
+      return item;
+    }).sort(function(a,b) { return b.pendencias - a.pendencias; }).slice(0, 10);
+
+    const semRetorno = Number(req.cards.semRetorno || 0);
+    const semTeste = Number(testes.cards.semTeste || 0);
+    const monthMap = {};
+    const weekdayMap = {};
+    const weekdayOrder = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
+
+    (testes.rows || []).forEach(function(item) {
+      const date = String(item.dtatst || "");
+      const month = date.substring(0, 7);
+      if (month) monthMap[month] = (monthMap[month] || 0) + Number(item.total || 0);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        const parsed = new Date(date + "T12:00:00");
+        const weekday = weekdayOrder[parsed.getDay()];
+        if (!weekdayMap[weekday]) weekdayMap[weekday] = { total:0, days:{} };
+        weekdayMap[weekday].total += Number(item.total || 0);
+        weekdayMap[weekday].days[date] = true;
+      }
+    });
+
+    const monthlyEvolution = Object.keys(monthMap).sort().map(function(month, idx, arr) {
+      const total = monthMap[month];
+      const previous = idx > 0 ? monthMap[arr[idx - 1]] : 0;
+      return {
+        month:month,
+        total:total,
+        variation:previous > 0 ? Math.round((total - previous) * 10000 / previous) / 100 : null,
+      };
+    });
+    const weekdayVolumes = weekdayOrder.slice(1, 6).map(function(day) {
+      const item = weekdayMap[day] || { total:0, days:{} };
+      const days = Object.keys(item.days).length;
+      return { day:day, total:item.total, average:days > 0 ? Math.round(item.total * 100 / days) / 100 : 0 };
+    });
+    const cellVolumes = (testes.byCelula || []).map(function(item) {
+      return { celula:item.celula, total:Number(item.com || 0) + Number(item.sem || 0) };
+    }).sort(function(a,b) { return b.total - a.total; });
+    const versionVolumes = (testes.byVersao || []).map(function(item) {
+      return { versao:item.versao, total:Number(item.com || 0) + Number(item.sem || 0) };
+    }).sort(function(a,b) { return b.total - a.total; });
+    const operatorVolumes = (testes.byOperador || []).map(function(item) {
+      return { operador:item.operador, nome:item.nome || "", total:Number(item.total || 0), semTeste:Number(item.sem || 0) };
+    }).sort(function(a,b) { return b.total - a.total; });
+    const recommendations = [];
+    if (semRetorno > 0) recommendations.push({ level:"Crítico", title:"Tratar retornos pendentes", detail:semRetorno + " cópia(s) ainda estão sem retorno de requisito." });
+    if (semTeste > 0) recommendations.push({ level:"Atenção", title:"Regularizar testes pendentes", detail:semTeste + " cópia(s) ainda estão sem teste registrado." });
+    if (operatorPriorities.length && operatorPriorities[0].pendencias > 0) {
+      recommendations.push({ level:"Atenção", title:"Priorizar operador", detail:(operatorPriorities[0].nome || operatorPriorities[0].operador) + " concentra " + operatorPriorities[0].pendencias + " pendência(s)." });
+    }
+    if (!recommendations.length) recommendations.push({ level:"OK", title:"Operação regular", detail:"Não foram identificadas pendências nos snapshots atuais." });
+
+    return {
+      ok: true,
+      snapshot: {
+        reqSessionId:reqSessionId, reqTimestamp:reqLatest.ts || "",
+        testSessionId:testSessionId, testTimestamp:testLatest.ts || "",
+      },
+      filters:filters,
+      cards: {
+        retornoPerc:Number(req.cards.percCom || 0),
+        testesPerc:Number(testes.cards.percCom || 0),
+        semRetorno:semRetorno,
+        semTeste:semTeste,
+        pendencias:semRetorno + semTeste,
+        operadoresCriticos:operatorPriorities.filter(function(op) { return op.status === "Crítico"; }).length,
+      },
+      operatorPriorities:operatorPriorities.slice(0, 12),
+      criticalVersions:criticalVersions,
+      monthlyEvolution:monthlyEvolution,
+      weekdayVolumes:weekdayVolumes,
+      cellVolumes:cellVolumes.slice(0, 12),
+      versionVolumes:versionVolumes.slice(0, 10),
+      operatorVolumes:operatorVolumes.slice(0, 15),
+      loweredRequirements:(req.rows || []).slice(0, 12),
+      recommendations:recommendations,
+    };
+  } catch(e) {
+    logEvent_("ERROR", "KPI_TESTER", "getKpiTesterManagementDashboard", "Erro ao carregar visão gerencial", e.message);
     return { ok:false, error:e.message };
   }
 }

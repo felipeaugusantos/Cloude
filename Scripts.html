@@ -1147,6 +1147,151 @@ function clearRelFilters() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// KPI TESTER — Management overview
+// ═════════════════════════════════════════════════════════════════════════════
+function loadKpiTesterManagementDashboard() {
+  var filters = {
+    dataInicio: document.getElementById('mgFDe').value || '',
+    dataFim: document.getElementById('mgFAte').value || '',
+  };
+  google.script.run
+    .withSuccessHandler(function(resp) {
+      if (!resp || !resp.ok) {
+        showSystemMsg('danger', 'Erro ao carregar visão gerencial: ' + (resp ? resp.error : 'sem resposta'));
+        return;
+      }
+      renderKpiTesterManagementDashboard(resp);
+    })
+    .withFailureHandler(function(err) { showSystemMsg('danger', 'Erro ao carregar visão gerencial: ' + err.message); })
+    .getKpiTesterManagementDashboard(JSON.stringify(filters));
+}
+
+function applyManagementFilters() {
+  var year = document.getElementById('mgYear').value;
+  if (year) {
+    document.getElementById('mgFDe').value = year + '-01-01';
+    document.getElementById('mgFAte').value = year + '-12-31';
+  }
+  loadKpiTesterManagementDashboard();
+}
+
+function clearManagementFilters() {
+  document.getElementById('mgYear').value = '';
+  document.getElementById('mgFDe').value = '';
+  document.getElementById('mgFAte').value = '';
+  loadKpiTesterManagementDashboard();
+}
+
+function managementStatusClass(status) {
+  if (status === 'Crítico') return 'danger';
+  if (status === 'Atenção') return 'warning';
+  return 'success';
+}
+
+function renderKpiTesterManagementDashboard(resp) {
+  var c = resp.cards || {};
+  var snapshot = resp.snapshot || {};
+  document.getElementById('mgRetornoPerc').textContent = (c.retornoPerc || 0) + '%';
+  document.getElementById('mgTestesPerc').textContent = (c.testesPerc || 0) + '%';
+  document.getElementById('mgSemRetorno').textContent = (c.semRetorno || 0).toLocaleString('pt-BR');
+  document.getElementById('mgSemTeste').textContent = (c.semTeste || 0).toLocaleString('pt-BR');
+  document.getElementById('mgPendencias').textContent = (c.pendencias || 0).toLocaleString('pt-BR');
+  document.getElementById('mgOperadoresCriticos').textContent = (c.operadoresCriticos || 0).toLocaleString('pt-BR');
+  document.getElementById('mgSnapshotInfo').textContent =
+    'Retorno: ' + (snapshot.reqTimestamp || 'sem snapshot') +
+    ' · Testes: ' + (snapshot.testTimestamp || 'sem snapshot');
+  populateManagementYears(resp.monthlyEvolution || []);
+
+  var recommendations = resp.recommendations || [];
+  document.getElementById('mgRecommendations').innerHTML = recommendations.map(function(item) {
+    return '<div class="decision-item">' +
+      '<span class="badge text-bg-' + managementStatusClass(item.level) + '">' + esc(item.level) + '</span>' +
+      '<div><strong>' + esc(item.title) + '</strong><p>' + esc(item.detail) + '</p></div>' +
+    '</div>';
+  }).join('');
+
+  var operators = (resp.operatorPriorities || []).filter(function(item) { return item.pendencias > 0; });
+  document.getElementById('mgOperatorRows').innerHTML = operators.map(function(item) {
+    var label = esc(item.nome || item.operador);
+    if (item.nome) label += '<br><small class="text-muted">' + esc(item.operador) + '</small>';
+    return '<tr><td>' + label + '</td>' +
+      '<td class="text-end text-danger">' + item.semRetorno.toLocaleString('pt-BR') + '</td>' +
+      '<td class="text-end text-warning">' + item.semTeste.toLocaleString('pt-BR') + '</td>' +
+      '<td class="text-end fw-bold">' + item.pendencias.toLocaleString('pt-BR') + '</td>' +
+      '<td><span class="badge text-bg-' + managementStatusClass(item.status) + '">' + esc(item.status) + '</span></td></tr>';
+  }).join('') || '<tr><td colspan="5" class="text-center text-muted py-3">Nenhuma pendência por operador.</td></tr>';
+
+  renderManagementCharts(resp);
+}
+
+function populateManagementYears(months) {
+  var sel = document.getElementById('mgYear');
+  var current = sel.value;
+  var years = [...new Set(months.map(function(item){ return item.month.substring(0,4); }).filter(Boolean))].sort().reverse();
+  sel.innerHTML = '<option value="">Todos</option>';
+  years.forEach(function(year) {
+    var opt = document.createElement('option');
+    opt.value = year; opt.textContent = year;
+    if (year === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function managementMonthLabel(value) {
+  var names = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var parts = String(value || '').split('-');
+  return parts.length === 2 ? names[Number(parts[1])-1] + '/' + parts[0] : value;
+}
+
+function renderManagementBar(id, labels, data, horizontal, color) {
+  destroyChart(id);
+  if (!labels.length) return;
+  charts[id] = new Chart(document.getElementById(id), {
+    type:'bar',
+    data:{ labels:labels, datasets:[{ data:data, backgroundColor:color || '#08a8dc', borderRadius:0 }] },
+    options:{ responsive:true, maintainAspectRatio:false, indexAxis:horizontal ? 'y' : 'x',
+      plugins:{ legend:{display:false} }, scales:{ x:{beginAtZero:true,grid:{display:false}}, y:{beginAtZero:true,grid:{display:false}} } },
+    plugins:[makeLabelPlugin(horizontal ? 'horizontal' : 'vertical', { color:'#10212d', fontSize:9 })],
+  });
+}
+
+function renderManagementCharts(resp) {
+  var monthly = resp.monthlyEvolution || [];
+  renderManagementBar('mgChartMonthly', monthly.map(function(r){return managementMonthLabel(r.month);}), monthly.map(function(r){return r.total;}), false, '#08a8dc');
+
+  destroyChart('mgChartVariation');
+  if (monthly.length) {
+    charts.mgChartVariation = new Chart(document.getElementById('mgChartVariation'), {
+      type:'line',
+      data:{ labels:monthly.map(function(r){return managementMonthLabel(r.month);}), datasets:[{
+        data:monthly.map(function(r){return r.total;}), borderColor:'#08a8dc', backgroundColor:'rgba(8,168,220,.5)',
+        pointBackgroundColor:'#dc3545', pointRadius:4, fill:true, tension:.08,
+      }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{display:false}},y:{display:false}} },
+    });
+  }
+
+  var cells = resp.cellVolumes || [];
+  renderManagementBar('mgChartCells', cells.map(function(r){return r.celula;}), cells.map(function(r){return r.total;}), true, '#08a8dc');
+  var operators = resp.operatorVolumes || [];
+  renderManagementBar('mgChartOperators', operators.map(function(r){return r.nome || r.operador;}), operators.map(function(r){return r.total;}), true, '#08a8dc');
+
+  destroyChart('mgChartWeekday');
+  var weekdays = resp.weekdayVolumes || [];
+  if (weekdays.length) {
+    charts.mgChartWeekday = new Chart(document.getElementById('mgChartWeekday'), {
+      type:'bar',
+      data:{ labels:weekdays.map(function(r){return r.day;}), datasets:[
+        {label:'Média diária',data:weekdays.map(function(r){return r.average;}),backgroundColor:'#08a8dc'},
+        {label:'Total',data:weekdays.map(function(r){return r.total;}),backgroundColor:'#3e8fcf'},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{position:'top'}},scales:{x:{beginAtZero:true,grid:{display:false}},y:{grid:{display:false}}}},
+    });
+  }
+  var versions = resp.versionVolumes || [];
+  renderManagementBar('mgChartVersions', versions.map(function(r){return r.versao;}), versions.map(function(r){return r.total;}), true, '#1768a5');
+}
+
 // KPI TESTER — Operator import (inline in left panel)
 // ═══════════════════════════════════════════════════════════════════════════
 var opePendingJson = null;
@@ -1175,8 +1320,12 @@ function validateOpeJson() {
 
   var errors = [];
   var valid  = [];
+  var seenCodes = {};
   data.forEach(function(item, idx) {
     if (!item.OPE_LOGOPE) { errors.push('Linha ' + (idx+1) + ': OPE_LOGOPE ausente'); return; }
+    var code = String(item.OPE_LOGOPE).trim().toUpperCase();
+    if (seenCodes[code]) { errors.push('Linha ' + (idx+1) + ': OPE_LOGOPE duplicado: ' + code); return; }
+    seenCodes[code] = true;
     valid.push(item);
   });
 
@@ -1220,6 +1369,7 @@ function confirmarSalvarOpe() {
         document.getElementById('opeJsonInput').value = '';
         opePendingJson = null;
         loadReqDashboard(); // refresh charts with new names
+        loadKpiTesterManagementDashboard();
       } else {
         showSystemMsg('danger', 'Erro ao salvar operadores: ' + res.error);
       }
@@ -1250,6 +1400,7 @@ function validateTestesJson() {
   data = data.map(normalizeKeys);
 
   var REQUIRED = ['ALT_DTATST','ALT_VERDDL','OPE_CONFER'];
+  var NUMERIC  = ['TOTAL','TOTAL_COM_TESTE','TOTAL_SEM_TESTE'];
   var COLS     = ['ALT_DTATST','ALT_VERDDL','OPE_CONFER','TOTAL','TOTAL_COM_TESTE','TOTAL_SEM_TESTE','REQUISITOS_BAIXADOS','CODIGO_TIPO','DESCRICAO_CELULA'];
   var errors   = [];
   var valid    = [];
@@ -1257,6 +1408,14 @@ function validateTestesJson() {
   data.forEach(function(item, idx) {
     var miss = REQUIRED.filter(function(f){ return !item[f] && item[f] !== 0; });
     if (miss.length) { errors.push('Linha ' + (idx+1) + ': ' + miss.join(', ') + ' ausente(s)'); return; }
+    var invalidNum = NUMERIC.filter(function(f){ return !isValidNumericValue(item[f]); });
+    if (invalidNum.length) { errors.push('Linha ' + (idx+1) + ': valor inválido em ' + invalidNum.join(', ')); return; }
+    if ([item.TOTAL,item.TOTAL_COM_TESTE,item.TOTAL_SEM_TESTE].some(function(v){ return Number(v) < 0; })) {
+      errors.push('Linha ' + (idx+1) + ': valores não podem ser negativos'); return;
+    }
+    if (Number(item.TOTAL) !== Number(item.TOTAL_COM_TESTE) + Number(item.TOTAL_SEM_TESTE)) {
+      errors.push('Linha ' + (idx+1) + ': TOTAL deve ser igual a TOTAL_COM_TESTE + TOTAL_SEM_TESTE'); return;
+    }
     valid.push(item);
   });
 
@@ -1297,6 +1456,7 @@ function confirmarSalvarTestes() {
         document.getElementById('testesJsonInput').value = '';
         testesPendingJson = null;
         loadTestesDashboard();
+        loadKpiTesterManagementDashboard();
       } else {
         showSystemMsg('danger', 'Erro ao salvar: ' + res.error);
       }
@@ -1314,7 +1474,7 @@ function loadTestesDashboard(sessionId) {
   google.script.run
     .withSuccessHandler(function(resp) {
       if (!resp.ok) { showSystemMsg('danger', 'Erro Testes: ' + resp.error); return; }
-      renderTestesSessions(resp.sessions, sessionId || null);
+      renderTestesSessions(resp.sessions, resp.activeSessionId || sessionId || null);
       renderTestesCards(resp.cards);
       renderTestesCharts(resp.byVersao, resp.byOperador, resp.byCelula);
       renderTestesTable(resp.rows);
@@ -1500,12 +1660,21 @@ function validateReqJson() {
               'TOTAL_COM_E_SEM_RETORNO','TOTAL_REQ_RETORNO','REQ_BAI_RETORNO',
               'REQUISITOS_BAIXOS_SEMRETORNO','RETORNO_REQUISITOS'];
   var REQUIRED = ['ALT_DTATST','ALT_VERDDL','OPE_CONFER'];
+  var NUMERIC  = ['TOTAL_SEM_RETORNO','TOTAL_COM_RETORNO','TOTAL_COM_E_SEM_RETORNO','TOTAL_REQ_RETORNO'];
 
   var errors  = [];
   var validRows = [];
   data.forEach(function(item, idx) {
     var miss = REQUIRED.filter(function(f){ return !item[f] && item[f] !== 0; });
     if (miss.length) { errors.push('Linha '+(idx+1)+': '+miss.join(', ')+' ausente(s)'); return; }
+    var invalidNum = NUMERIC.filter(function(f){ return !isValidNumericValue(item[f]); });
+    if (invalidNum.length) { errors.push('Linha '+(idx+1)+': valor inválido em '+invalidNum.join(', ')); return; }
+    if (NUMERIC.some(function(f){ return Number(item[f]) < 0; })) {
+      errors.push('Linha '+(idx+1)+': valores não podem ser negativos'); return;
+    }
+    if (Number(item.TOTAL_COM_E_SEM_RETORNO) !== Number(item.TOTAL_SEM_RETORNO) + Number(item.TOTAL_COM_RETORNO)) {
+      errors.push('Linha '+(idx+1)+': TOTAL_COM_E_SEM_RETORNO deve ser igual à soma das parcelas'); return;
+    }
     validRows.push(item);
   });
 
@@ -1553,6 +1722,7 @@ function confirmarSalvarReq() {
         document.getElementById('reqJsonInput').value = '';
         reqPendingJson = null;
         loadReqDashboard();
+        loadKpiTesterManagementDashboard();
       } else {
         showSystemMsg('danger', 'Erro ao salvar: ' + res.error);
       }
@@ -1572,7 +1742,7 @@ function loadReqDashboard(sessionId) {
     .withSuccessHandler(function(resp) {
       if (!resp.ok) { showSystemMsg('danger', 'Erro: ' + resp.error); return; }
       var opeNames = resp.opeNames || {};
-      renderReqSessions(resp.sessions, sessionId || null);
+      renderReqSessions(resp.sessions, resp.activeSessionId || sessionId || null);
       renderReqCards(resp.cards);
       renderReqCharts(resp.byVersao, resp.byOperador);
       renderOpePerformanceTable(resp.byOperador);
@@ -1762,8 +1932,9 @@ function buildReqTableHtml(rows, q) {
 document.addEventListener('shown.bs.tab', function(e) {
   var target = e.target.getAttribute('data-bs-target');
   if (target === '#tabReq') {
-    loadReqDashboard();   // always refresh Retorno view
-    // Testes view loads on demand via pill button click
+    loadKpiTesterManagementDashboard();
+    loadReqDashboard();
+    loadTestesDashboard();
   }
 });
 

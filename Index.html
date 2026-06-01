@@ -603,7 +603,13 @@
           <!-- Sub-navigation pills -->
           <ul class="nav nav-pills mb-3 gap-1">
             <li class="nav-item">
-              <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#viewRetorno" id="pillRetorno">
+              <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#viewGestao" id="pillGestao"
+                onclick="loadKpiTesterManagementDashboard()">
+                📊 Visão Gerencial
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-bs-toggle="pill" data-bs-target="#viewRetorno" id="pillRetorno">
                 📋 Retorno
               </button>
             </li>
@@ -618,7 +624,59 @@
           <div class="tab-content">
 
             <!-- ── Retorno view ───────────────────────────────────────── -->
-            <div class="tab-pane fade show active" id="viewRetorno">
+            <div class="tab-pane fade show active" id="viewGestao">
+              <div class="bi-header mb-3">
+                <div>
+                  <h4 class="mb-1 fw-bold">Acompanhamento Qualidade</h4>
+                  <div class="text-muted">Painel gerencial · KPI Tester</div>
+                </div>
+                <div class="bi-filter-bar">
+                  <label>Ano <select id="mgYear" class="form-select form-select-sm" onchange="applyManagementFilters()"><option value="">Todos</option></select></label>
+                  <label>Período <input type="date" id="mgFDe" class="form-control form-control-sm"></label>
+                  <label><span>&nbsp;</span><input type="date" id="mgFAte" class="form-control form-control-sm"></label>
+                  <button class="btn btn-primary btn-sm" onclick="applyManagementFilters()">Aplicar</button>
+                  <button class="btn btn-outline-secondary btn-sm" onclick="clearManagementFilters()">Limpar</button>
+                </div>
+              </div>
+              <div id="mgSnapshotInfo" class="small text-muted text-end mb-2"></div>
+
+              <div class="row g-3 mb-3">
+                <div class="col-6 col-md-3 col-xl-2"><div class="bi-kpi-card"><span>% com retorno</span><strong id="mgRetornoPerc">—</strong></div></div>
+                <div class="col-6 col-md-3 col-xl-2"><div class="bi-kpi-card"><span>% com teste</span><strong id="mgTestesPerc">—</strong></div></div>
+                <div class="col-6 col-md-3 col-xl-2"><div class="bi-kpi-card"><span>Sem retorno</span><strong id="mgSemRetorno">—</strong></div></div>
+                <div class="col-6 col-md-3 col-xl-2"><div class="bi-kpi-card"><span>Sem teste</span><strong id="mgSemTeste">—</strong></div></div>
+                <div class="col-6 col-md-3 col-xl-2"><div class="bi-kpi-card"><span>Pendências</span><strong id="mgPendencias">—</strong></div></div>
+                <div class="col-6 col-md-3 col-xl-2"><div class="bi-kpi-card"><span>Operadores críticos</span><strong id="mgOperadoresCriticos">—</strong></div></div>
+              </div>
+
+              <div class="row g-3 mb-3">
+                <div class="col-lg-5"><div class="bi-panel"><h6>Evolução de Requisitos</h6><canvas id="mgChartMonthly" height="150"></canvas></div></div>
+                <div class="col-lg-7"><div class="bi-panel"><h6>Variação Mês a Mês</h6><canvas id="mgChartVariation" height="150"></canvas></div></div>
+              </div>
+
+              <div class="row g-3 mb-3">
+                <div class="col-lg-5"><div class="bi-panel"><h6>Quantidade por Célula</h6><canvas id="mgChartCells" height="220"></canvas></div></div>
+                <div class="col-lg-7"><div class="bi-panel"><h6>Quantidade por Operador</h6><canvas id="mgChartOperators" height="220"></canvas></div></div>
+              </div>
+
+              <div class="row g-3 mb-3">
+                <div class="col-lg-6"><div class="bi-panel"><h6>Médias por Dia Útil</h6><canvas id="mgChartWeekday" height="180"></canvas></div></div>
+                <div class="col-lg-6"><div class="bi-panel"><h6>Requisitos Baixados por Versão</h6><canvas id="mgChartVersions" height="180"></canvas></div></div>
+              </div>
+
+              <div class="row g-3">
+                <div class="col-lg-5"><div class="bi-panel h-100"><h6>Recomendações Prioritárias</h6><div id="mgRecommendations" class="decision-list"></div></div></div>
+                <div class="col-lg-7"><div class="bi-panel h-100">
+                  <h6>Operadores com Maior Pendência</h6>
+                  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>Operador</th><th class="text-end">Sem retorno</th><th class="text-end">Sem teste</th><th class="text-end">Total</th><th>Status</th></tr></thead>
+                    <tbody id="mgOperatorRows"></tbody>
+                  </table></div>
+                </div></div>
+              </div>
+            </div><!-- /viewGestao -->
+
+            <div class="tab-pane fade" id="viewRetorno">
 
               <!-- Cards -->
               <div class="row g-2 mb-3">
