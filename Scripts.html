@@ -1232,7 +1232,251 @@ function confirmarSalvarOpe() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// KPI TESTER tab (Req. Retorno)
+// KPI TESTER — Testes de Cópias import & dashboard
+// ═══════════════════════════════════════════════════════════════════════════
+var testesPendingJson = null;
+var testesAllRows     = [];
+
+function validateTestesJson() {
+  var raw = (document.getElementById('testesJsonInput').value || '').trim();
+  if (!raw) { showSystemMsg('warning', 'Cole o JSON antes de validar.'); return; }
+
+  var data;
+  try { data = JSON.parse(raw); } catch(e) {
+    showSystemMsg('danger', 'JSON inválido: ' + e.message); return;
+  }
+  if (!Array.isArray(data)) data = [data];
+
+  data = data.map(normalizeKeys);
+
+  var REQUIRED = ['ALT_DTATST','ALT_VERDDL','OPE_CONFER'];
+  var COLS     = ['ALT_DTATST','ALT_VERDDL','OPE_CONFER','TOTAL','TOTAL_COM_TESTE','TOTAL_SEM_TESTE','REQUISITOS_BAIXADOS','CODIGO_TIPO','DESCRICAO_CELULA'];
+  var errors   = [];
+  var valid    = [];
+
+  data.forEach(function(item, idx) {
+    var miss = REQUIRED.filter(function(f){ return !item[f] && item[f] !== 0; });
+    if (miss.length) { errors.push('Linha ' + (idx+1) + ': ' + miss.join(', ') + ' ausente(s)'); return; }
+    valid.push(item);
+  });
+
+  var errEl  = document.getElementById('testesValidErrors');
+  var infoEl = document.getElementById('testesValidInfo');
+  if (errors.length) {
+    errEl.textContent = errors.slice(0,5).join(' | ');
+    errEl.classList.remove('d-none'); infoEl.classList.add('d-none');
+    document.getElementById('btnConfirmSaveTestes').disabled = true;
+  } else {
+    errEl.classList.add('d-none');
+    infoEl.textContent = '✅ ' + valid.length + ' registro(s) válido(s). Confirme para salvar.';
+    infoEl.classList.remove('d-none');
+    document.getElementById('btnConfirmSaveTestes').disabled = false;
+  }
+
+  document.getElementById('testesPreviewHead').innerHTML =
+    '<tr>' + COLS.map(function(c){ return '<th>' + c + '</th>'; }).join('') + '</tr>';
+  document.getElementById('testesPreviewBody').innerHTML = data.slice(0, 50).map(function(item){
+    return '<tr>' + COLS.map(function(c){ return '<td>' + esc(item[c] === undefined ? '' : item[c]) + '</td>'; }).join('') + '</tr>';
+  }).join('');
+
+  testesPendingJson = valid.length ? JSON.stringify(data) : null;
+  new bootstrap.Modal(document.getElementById('testesValidModal')).show();
+}
+
+function confirmarSalvarTestes() {
+  if (!testesPendingJson) return;
+  document.getElementById('btnConfirmSaveTestes').disabled = true;
+  document.getElementById('btnConfirmSaveTestes').textContent = '⏳ Salvando…';
+  bootstrap.Modal.getInstance(document.getElementById('testesValidModal')).hide();
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      document.getElementById('btnConfirmSaveTestes').textContent = '✅ Confirmar e Salvar';
+      if (res.ok) {
+        showSystemMsg('success', '✅ ' + res.total + ' registro(s) de testes importado(s).');
+        document.getElementById('testesJsonInput').value = '';
+        testesPendingJson = null;
+        loadTestesDashboard();
+      } else {
+        showSystemMsg('danger', 'Erro ao salvar: ' + res.error);
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('btnConfirmSaveTestes').textContent = '✅ Confirmar e Salvar';
+      showSystemMsg('danger', 'Falha: ' + err.message);
+    })
+    .saveTestes(testesPendingJson);
+}
+
+function loadTestesDashboard(sessionId) {
+  var filters = buildTestesFilters();
+  if (sessionId) filters.sessionId = sessionId;
+  google.script.run
+    .withSuccessHandler(function(resp) {
+      if (!resp.ok) { showSystemMsg('danger', 'Erro Testes: ' + resp.error); return; }
+      renderTestesSessions(resp.sessions, sessionId || null);
+      renderTestesCards(resp.cards);
+      renderTestesCharts(resp.byVersao, resp.byOperador, resp.byCelula);
+      renderTestesTable(resp.rows);
+      populateTestesSelects(resp.operadorList, resp.celulaList, resp.opeNames);
+    })
+    .withFailureHandler(function(err){ showSystemMsg('danger', 'Erro ao carregar Testes: ' + err.message); })
+    .getTestesDashboard(JSON.stringify(filters));
+}
+
+function buildTestesFilters() {
+  return {
+    dataInicio: document.getElementById('tsFDe').value       || '',
+    dataFim:    document.getElementById('tsFAte').value      || '',
+    versao:     document.getElementById('tsFVersao').value   || '',
+    operador:   document.getElementById('tsFOperador').value || '',
+    celula:     document.getElementById('tsFCelula').value   || '',
+  };
+}
+
+function applyTestesFilter() { loadTestesDashboard(); }
+
+function clearTestesFilters() {
+  ['tsFDe','tsFAte','tsFVersao'].forEach(function(id){ document.getElementById(id).value = ''; });
+  ['tsFOperador','tsFCelula'].forEach(function(id){ document.getElementById(id).selectedIndex = 0; });
+  loadTestesDashboard();
+}
+
+function populateTestesSelects(opList, celList, opeNames) {
+  var opSel  = document.getElementById('tsFOperador');
+  var celSel = document.getElementById('tsFCelula');
+  var curOp  = opSel.value;
+  var curCel = celSel.value;
+
+  opSel.innerHTML = '<option value="">Todos</option>';
+  (opList||[]).forEach(function(op) {
+    var opt  = document.createElement('option');
+    var nome = opeNames && opeNames[op.toUpperCase()];
+    opt.value = op; opt.textContent = nome ? op + ' — ' + nome : op;
+    if (op === curOp) opt.selected = true;
+    opSel.appendChild(opt);
+  });
+
+  celSel.innerHTML = '<option value="">Todas</option>';
+  (celList||[]).forEach(function(c) {
+    var opt = document.createElement('option');
+    opt.value = c; opt.textContent = c;
+    if (c === curCel) opt.selected = true;
+    celSel.appendChild(opt);
+  });
+}
+
+function renderTestesSessions(sessions, activeId) {
+  var el = document.getElementById('testesSessionList');
+  if (!sessions || !sessions.length) {
+    el.innerHTML = '<div class="text-muted small text-center py-1">Nenhuma sessão ainda</div>'; return;
+  }
+  el.innerHTML = sessions.slice(0, 8).map(function(s) {
+    var isActive = s.id === activeId;
+    var badge    = s.status === 'OK'
+      ? '<span class="badge bg-success">' + s.total + '</span>'
+      : '<span class="badge bg-danger">Erro</span>';
+    return '<div class="session-item' + (isActive?' active':'') + '" onclick="loadTestesDashboard(\''+esc(s.id)+'\')" title="'+esc(s.erro||'')+'">'
+      + '<div style="font-size:.7rem">' + esc(s.ts.substring(0,16)) + '</div>' + badge + '</div>';
+  }).join('');
+}
+
+function renderTestesCards(cards) {
+  document.getElementById('testesCTotal').textContent = (cards.total      || 0).toLocaleString('pt-BR');
+  document.getElementById('testesCCom').textContent   = (cards.comTeste   || 0).toLocaleString('pt-BR');
+  document.getElementById('testesCSem').textContent   = (cards.semTeste   || 0).toLocaleString('pt-BR');
+  document.getElementById('testesCPerc').textContent  = (cards.percCom    || 0) + '%';
+}
+
+function renderTestesCharts(byVersao, byOperador, byCelula) {
+  // By versao
+  destroyChart('testesVersao');
+  if ((byVersao||[]).length) {
+    charts['testesVersao'] = new Chart(document.getElementById('chartTestesVersao'), {
+      type: 'bar',
+      data: {
+        labels: byVersao.map(function(r){ return r.versao; }),
+        datasets: [
+          { label:'Com Teste', data:byVersao.map(function(r){ return r.com; }), backgroundColor:'rgba(25,135,84,.75)',  stack:'s' },
+          { label:'Sem Teste', data:byVersao.map(function(r){ return r.sem; }), backgroundColor:'rgba(220,53,69,.75)',  stack:'s' },
+        ],
+      },
+      options: { responsive:true, indexAxis:'y', plugins:{ legend:{position:'bottom'} }, scales:{ x:{stacked:true}, y:{stacked:true} } },
+    });
+  }
+
+  // By operador
+  destroyChart('testesOperador');
+  if ((byOperador||[]).length) {
+    charts['testesOperador'] = new Chart(document.getElementById('chartTestesOperador'), {
+      type: 'bar',
+      data: {
+        labels: byOperador.map(function(r){ return r.nome || r.operador; }),
+        datasets: [
+          { label:'Com Teste', data:byOperador.map(function(r){ return r.com; }), backgroundColor:'rgba(25,135,84,.75)',  stack:'s' },
+          { label:'Sem Teste', data:byOperador.map(function(r){ return r.sem; }), backgroundColor:'rgba(220,53,69,.75)',  stack:'s' },
+        ],
+      },
+      options: { responsive:true, indexAxis:'y', plugins:{ legend:{position:'bottom'} }, scales:{ x:{stacked:true}, y:{stacked:true} } },
+    });
+  }
+
+  // By celula
+  destroyChart('testesCelula');
+  if ((byCelula||[]).length) {
+    charts['testesCelula'] = new Chart(document.getElementById('chartTestesCelula'), {
+      type: 'bar',
+      data: {
+        labels: byCelula.map(function(r){ return r.celula; }),
+        datasets: [
+          { label:'Com Teste', data:byCelula.map(function(r){ return r.com; }), backgroundColor:'rgba(25,135,84,.75)',  stack:'s' },
+          { label:'Sem Teste', data:byCelula.map(function(r){ return r.sem; }), backgroundColor:'rgba(220,53,69,.75)',  stack:'s' },
+        ],
+      },
+      options: { responsive:true, indexAxis:'y', plugins:{ legend:{position:'bottom'} }, scales:{ x:{stacked:true}, y:{stacked:true} } },
+    });
+  }
+}
+
+function renderTestesTable(rows) {
+  testesAllRows = rows || [];
+  buildTestesTableHtml(testesAllRows, '');
+}
+
+function filterTestesTable(q) {
+  buildTestesTableHtml(testesAllRows, (q||'').toLowerCase().trim());
+}
+
+function buildTestesTableHtml(rows, q) {
+  var tbody    = document.getElementById('testesTBody');
+  var filtered = q ? rows.filter(function(r){
+    return (r.dtatst+r.versao+r.operador+r.nomeOpe+r.celula+r.codigoTipo+r.requisitos).toLowerCase().includes(q);
+  }) : rows;
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">Nenhum registro encontrado</td></tr>'; return;
+  }
+
+  tbody.innerHTML = filtered.map(function(r) {
+    var perc     = r.total > 0 ? Math.round(r.comTeste*100/r.total) : 0;
+    var rowCls   = r.semTeste > 0 ? 'sem-caminho-row' : '';
+    var opeLabel = r.nomeOpe ? esc(r.operador)+'<br><small class="text-muted">'+esc(r.nomeOpe)+'</small>' : esc(r.operador);
+    return '<tr class="'+rowCls+'">'
+      + '<td>'+esc(r.dtatst)+'</td>'
+      + '<td>'+esc(r.versao)+'</td>'
+      + '<td>'+opeLabel+'</td>'
+      + '<td class="text-end fw-bold text-success">'+r.comTeste.toLocaleString('pt-BR')+'</td>'
+      + '<td class="text-end fw-bold text-danger">'+r.semTeste.toLocaleString('pt-BR')+'</td>'
+      + '<td class="text-end">'+r.total.toLocaleString('pt-BR')+'</td>'
+      + '<td>'+esc(r.codigoTipo)+'</td>'
+      + '<td>'+esc(r.celula)+'</td>'
+      + '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.requisitos)+'">'+esc(r.requisitos||'—')+'</td>'
+      + '</tr>';
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// KPI TESTER tab (Req. Retorno — Retorno view)
 // ═══════════════════════════════════════════════════════════════════════════
 var reqPendingJson = null;  // holds validated JSON array before confirming save
 var reqAllRows     = [];    // current rendered table rows (for quick filter)
@@ -1516,8 +1760,10 @@ function buildReqTableHtml(rows, q) {
 
 // ── Tab shown event — lazy load ───────────────────────────────────────────
 document.addEventListener('shown.bs.tab', function(e) {
-  if (e.target.getAttribute('data-bs-target') === '#tabReq') {
-    loadReqDashboard();
+  var target = e.target.getAttribute('data-bs-target');
+  if (target === '#tabReq') {
+    loadReqDashboard();   // always refresh Retorno view
+    // Testes view loads on demand via pill button click
   }
 });
 

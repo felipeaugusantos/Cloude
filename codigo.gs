@@ -1268,6 +1268,197 @@ function getReqDashboard(filtersJson) {
   }
 }
 
+// ─── Testes de Cópias — constants & functions ────────────────────────────────
+const TESTES_HEADER = [
+  "SESSION_ID","IMPORT_TS","ALT_DTATST","ALT_VERDDL","OPE_CONFER",
+  "TOTAL","TOTAL_COM_TESTE","TOTAL_SEM_TESTE","REQUISITOS_BAIXADOS",
+  "CODIGO_TIPO","DESCRICAO_CELULA"
+];
+const TESTES_NUMERIC_FIELDS  = ["TOTAL","TOTAL_COM_TESTE","TOTAL_SEM_TESTE"];
+const TESTES_SESSOES_HEADER  = ["SESSION_ID","TIMESTAMP","TOTAL_REGISTROS","STATUS","ERRO"];
+
+function saveTestes(jsonString) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss        = getSpreadsheet_();
+    const tz        = ss.getSpreadsheetTimeZone();
+    const ts        = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
+    const sessionId = Utilities.getUuid();
+
+    const sheetTst  = ensureSheet_(ss, "TESTES_Historico", TESTES_HEADER);
+    const sheetSess = ensureSheet_(ss, "TESTES_Sessoes",   TESTES_SESSOES_HEADER);
+
+    let data;
+    try { data = JSON.parse(jsonString); } catch(e) {
+      sheetSess.appendRow([sessionId, ts, 0, "ERRO", "JSON inválido: " + e.message]);
+      return { ok: false, error: "JSON inválido: " + e.message };
+    }
+    if (!Array.isArray(data)) data = [data];
+
+    // Normalize keys to UPPERCASE
+    data = data.map(function(item) {
+      const norm = {};
+      Object.keys(item).forEach(function(k) { norm[k.toUpperCase()] = item[k]; });
+      return norm;
+    });
+
+    const REQUIRED = ["ALT_DTATST","ALT_VERDDL","OPE_CONFER"];
+    const errors   = [];
+    const rows     = [];
+
+    data.forEach(function(item, idx) {
+      const missing = REQUIRED.filter(function(f) {
+        return item[f] === undefined || item[f] === null || String(item[f]).trim() === "";
+      });
+      if (missing.length) {
+        errors.push("Linha " + (idx+1) + ": " + missing.join(", ") + " ausente(s)");
+        return;
+      }
+      rows.push([
+        sessionId, ts,
+        String(item.ALT_DTATST         || ""),
+        String(item.ALT_VERDDL         || ""),
+        String(item.OPE_CONFER         || ""),
+        isValidNumberValue(item.TOTAL)           ? Number(item.TOTAL)           : 0,
+        isValidNumberValue(item.TOTAL_COM_TESTE) ? Number(item.TOTAL_COM_TESTE) : 0,
+        isValidNumberValue(item.TOTAL_SEM_TESTE) ? Number(item.TOTAL_SEM_TESTE) : 0,
+        String(item.REQUISITOS_BAIXADOS || ""),
+        String(item.CODIGO_TIPO         || ""),
+        String(item.DESCRICAO_CELULA    || "SEM CELULA"),
+      ]);
+    });
+
+    if (errors.length) {
+      sheetSess.appendRow([sessionId, ts, 0, "ERRO", errors.slice(0,3).join(" | ")]);
+      return { ok: false, error: errors.join("\n") };
+    }
+
+    if (rows.length) {
+      sheetTst.getRange(sheetTst.getLastRow()+1, 1, rows.length, TESTES_HEADER.length).setValues(rows);
+    }
+    sheetSess.appendRow([sessionId, ts, rows.length, "OK", ""]);
+    logEvent_("INFO", "TESTES", "saveTestes", "Importação concluída", rows.length + " registros");
+    return { ok: true, sessionId: sessionId, total: rows.length };
+  } catch(e) {
+    logEvent_("ERROR", "TESTES", "saveTestes", "Erro ao salvar", e.message);
+    return { ok: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getTestesDashboard(filtersJson) {
+  try {
+    var filters = filtersJson ? JSON.parse(filtersJson) : {};
+    var ss      = getSpreadsheet_();
+    var tz      = ss.getSpreadsheetTimeZone();
+
+    // Operator names
+    var opeNamesMap = {};
+    try {
+      var opeSheetT = ss.getSheetByName("Operadores");
+      if (opeSheetT) {
+        var opeDataT = opeSheetT.getDataRange().getValues();
+        for (var oi = 1; oi < opeDataT.length; oi++) {
+          var oc = String(opeDataT[oi][0]||"").trim().toUpperCase();
+          if (oc) opeNamesMap[oc] = String(opeDataT[oi][1]||"");
+        }
+      }
+    } catch(eT) {}
+
+    // Sessions
+    var sheetSessT = ensureSheet_(ss, "TESTES_Sessoes", TESTES_SESSOES_HEADER);
+    var sessDT     = sheetSessT.getDataRange().getValues();
+    var sessions   = [];
+    if (sessDT.length > 1) {
+      for (var si = sessDT.length - 1; si >= 1; si--) {
+        var sr = sessDT[si];
+        var st = sr[1] instanceof Date ? Utilities.formatDate(sr[1],tz,"yyyy-MM-dd HH:mm:ss") : String(sr[1]||"");
+        sessions.push({ id:String(sr[0]||""), ts:st, total:Number(sr[2]||0), status:String(sr[3]||""), erro:String(sr[4]||"") });
+      }
+    }
+
+    var sheetTst = ensureSheet_(ss, "TESTES_Historico", TESTES_HEADER);
+    var rawData  = sheetTst.getDataRange().getValues();
+    var EMPTY    = { ok:true, sessions:sessions, cards:{total:0,comTeste:0,semTeste:0,totalCopias:0,percCom:0},
+                     byVersao:[], byOperador:[], byCelula:[], versaoList:[], operadorList:[], celulaList:[], opeNames:opeNamesMap, rows:[] };
+    if (rawData.length <= 1) return EMPTY;
+
+    var hdr = rawData[0].map(function(h){ return String(h).trim().toUpperCase(); });
+    var ci  = {};
+    TESTES_HEADER.forEach(function(col,idx){ ci[col]=hdr.indexOf(col); if(ci[col]<0) ci[col]=idx; });
+
+    var sessionFilter = filters.sessionId || null;
+    var items = [];
+
+    for (var i = 1; i < rawData.length; i++) {
+      var r = rawData[i];
+      var sid = String(r[ci["SESSION_ID"]]||"");
+      if (sessionFilter && sid !== sessionFilter) continue;
+
+      var dtatst = r[ci["ALT_DTATST"]] instanceof Date
+        ? Utilities.formatDate(r[ci["ALT_DTATST"]], tz, "yyyy-MM-dd")
+        : String(r[ci["ALT_DTATST"]]||"").trim();
+
+      if (filters.dataInicio && dtatst && dtatst < filters.dataInicio) continue;
+      if (filters.dataFim    && dtatst && dtatst > filters.dataFim)    continue;
+
+      var versao   = String(r[ci["ALT_VERDDL"]]       ||"").trim();
+      var operador = String(r[ci["OPE_CONFER"]]        ||"").trim();
+      var celula   = String(r[ci["DESCRICAO_CELULA"]]  ||"SEM CELULA").trim();
+
+      if (filters.versao   && !versao.toLowerCase().includes(filters.versao.toLowerCase()))    continue;
+      if (filters.operador && operador.toLowerCase() !== filters.operador.toLowerCase())       continue;
+      if (filters.celula   && celula.toLowerCase()   !== filters.celula.toLowerCase())         continue;
+
+      items.push({
+        sessionId:  sid,
+        dtatst:     dtatst,
+        versao:     versao,
+        operador:   operador,
+        nomeOpe:    opeNamesMap[operador.toUpperCase()] || "",
+        total:      Number(r[ci["TOTAL"]]           ||0),
+        comTeste:   Number(r[ci["TOTAL_COM_TESTE"]] ||0),
+        semTeste:   Number(r[ci["TOTAL_SEM_TESTE"]] ||0),
+        requisitos: String(r[ci["REQUISITOS_BAIXADOS"]]||""),
+        codigoTipo: String(r[ci["CODIGO_TIPO"]]     ||""),
+        celula:     celula,
+      });
+    }
+
+    var totalReg    = items.length;
+    var comTeste    = items.reduce(function(s,r){ return s+r.comTeste; },0);
+    var semTeste    = items.reduce(function(s,r){ return s+r.semTeste; },0);
+    var totalCopias = items.reduce(function(s,r){ return s+r.total;    },0);
+    var percCom     = totalCopias > 0 ? Math.round(comTeste*100/totalCopias) : 0;
+
+    var versaoMap = {};
+    items.forEach(function(r){ if(!versaoMap[r.versao]) versaoMap[r.versao]={versao:r.versao,com:0,sem:0}; versaoMap[r.versao].com+=r.comTeste; versaoMap[r.versao].sem+=r.semTeste; });
+    var byVersao = Object.values(versaoMap).sort(function(a,b){ return (b.com+b.sem)-(a.com+a.sem); });
+
+    var opMap2 = {};
+    items.forEach(function(r){ var k=r.operador; if(!opMap2[k]) opMap2[k]={operador:k,nome:r.nomeOpe,com:0,sem:0,total:0}; opMap2[k].com+=r.comTeste; opMap2[k].sem+=r.semTeste; opMap2[k].total+=r.total; });
+    var byOperador = Object.values(opMap2).map(function(e){ return Object.assign({},e,{perc:e.total>0?Math.round(e.com*100/e.total):0}); }).sort(function(a,b){ return (b.com+b.sem)-(a.com+a.sem); });
+
+    var celMap = {};
+    items.forEach(function(r){ if(!celMap[r.celula]) celMap[r.celula]={celula:r.celula,com:0,sem:0}; celMap[r.celula].com+=r.comTeste; celMap[r.celula].sem+=r.semTeste; });
+    var byCelula = Object.values(celMap).sort(function(a,b){ return (b.com+b.sem)-(a.com+a.sem); });
+
+    var versaoList   = [...new Set(items.map(function(r){ return r.versao;   }).filter(Boolean))].sort();
+    var operadorList = [...new Set(items.map(function(r){ return r.operador; }).filter(Boolean))].sort();
+    var celulaList   = [...new Set(items.map(function(r){ return r.celula;   }).filter(Boolean))].sort();
+
+    return { ok:true, sessions:sessions, cards:{total:totalReg,comTeste:comTeste,semTeste:semTeste,totalCopias:totalCopias,percCom:percCom},
+             byVersao:byVersao, byOperador:byOperador, byCelula:byCelula,
+             versaoList:versaoList, operadorList:operadorList, celulaList:celulaList,
+             opeNames:opeNamesMap, rows:items };
+  } catch(e) {
+    logEvent_("ERROR","TESTES","getTestesDashboard","Erro ao carregar dashboard",e.message);
+    return { ok:false, error:e.message };
+  }
+}
+
 // ─── Operadores — constants & functions ───────────────────────────────────────
 const OPE_HEADER = ["OPE_LOGOPE", "OPE_DESCRI", "IMPORT_TS"];
 

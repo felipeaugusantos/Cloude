@@ -468,30 +468,51 @@
       </div>
     </div><!-- /tabKpi -->
 
-    <!-- ══ TAB REQ. RETORNO ═══════════════════════════════════════════════ -->
+    <!-- ══ TAB KPI TESTER ════════════════════════════════════════════════ -->
     <div class="tab-pane fade" id="tabReq">
       <div class="row g-3">
 
         <!-- Left: import panel -->
         <div class="col-lg-3">
-          <div class="card chart-card p-3 mb-3">
-            <h6 class="card-title mb-2 fw-bold">📥 Importar JSON</h6>
+
+          <!-- Retorno import -->
+          <div class="card chart-card p-3 mb-2">
+            <h6 class="card-title mb-1 fw-bold">📋 Importar Retorno</h6>
             <textarea id="reqJsonInput" class="form-control form-control-sm font-monospace mb-2"
-              rows="8" placeholder='Cole aqui o resultado do SELECT em formato JSON…&#10;&#10;[{"ALT_DTATST":"2026-05-20","ALT_VERDDL":"48.02.30.72","OPE_CONFER":"H75",...}]'></textarea>
+              rows="5" placeholder='[{"ALT_DTATST":"2026-05-20","ALT_VERDDL":"48.02.30.72","OPE_CONFER":"H75","TOTAL_SEM_RETORNO":3,...}]'></textarea>
             <div class="d-flex gap-2">
-              <button class="btn btn-primary btn-sm flex-grow-1" onclick="validateReqJson()">🔍 Validar / Preview</button>
+              <button class="btn btn-primary btn-sm flex-grow-1" onclick="validateReqJson()">🔍 Validar</button>
               <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('reqJsonInput').value=''">🗑</button>
+            </div>
+            <div class="mt-2" style="font-size:.7rem;font-weight:600;color:#6c757d">Últimas sessões:</div>
+            <div id="reqSessionList" class="d-flex flex-column gap-1 mt-1" style="max-height:120px;overflow-y:auto">
+              <div class="text-muted small text-center py-1">Nenhuma sessão ainda</div>
+            </div>
+          </div>
+
+          <!-- Testes import -->
+          <div class="card chart-card p-3 mb-2">
+            <h6 class="card-title mb-1 fw-bold">🧪 Importar Testes</h6>
+            <textarea id="testesJsonInput" class="form-control form-control-sm font-monospace mb-2"
+              rows="5" placeholder='[{"ALT_DTATST":"2026-05-20","ALT_VERDDL":"48.02.30.72","OPE_CONFER":"H75","TOTAL":10,"TOTAL_COM_TESTE":8,"TOTAL_SEM_TESTE":2,"DESCRICAO_CELULA":"CELULA A",...}]'></textarea>
+            <div class="d-flex gap-2">
+              <button class="btn btn-warning btn-sm flex-grow-1 text-dark" onclick="validateTestesJson()">🔍 Validar</button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('testesJsonInput').value=''">🗑</button>
+            </div>
+            <div class="mt-2" style="font-size:.7rem;font-weight:600;color:#6c757d">Últimas sessões:</div>
+            <div id="testesSessionList" class="d-flex flex-column gap-1 mt-1" style="max-height:120px;overflow-y:auto">
+              <div class="text-muted small text-center py-1">Nenhuma sessão ainda</div>
             </div>
           </div>
 
           <!-- Operator import -->
-          <div class="card chart-card p-3 mb-3">
-            <h6 class="card-title mb-2 fw-bold">👤 Importar Operadores</h6>
-            <p class="text-muted" style="font-size:.72rem;margin-bottom:.4rem">
+          <div class="card chart-card p-3">
+            <h6 class="card-title mb-1 fw-bold">👤 Importar Operadores</h6>
+            <p class="text-muted" style="font-size:.7rem;margin-bottom:.4rem">
               JSON de <code>SELECT OPE_LOGOPE, OPE_DESCRI FROM cadope</code>
             </p>
             <textarea id="opeJsonInput" class="form-control form-control-sm font-monospace mb-2"
-              rows="4" placeholder='[{"OPE_LOGOPE":"H75","OPE_DESCRI":"João Silva"},…]'></textarea>
+              rows="3" placeholder='[{"OPE_LOGOPE":"H75","OPE_DESCRI":"João Silva"},…]'></textarea>
             <div class="d-flex gap-2">
               <button class="btn btn-outline-primary btn-sm flex-grow-1" onclick="validateOpeJson()">🔍 Validar / Salvar</button>
               <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('opeJsonInput').value=''">🗑</button>
@@ -499,145 +520,262 @@
             <div id="opeImportStatus" class="mt-1 small"></div>
           </div>
 
-          <div class="card chart-card p-3">
-            <h6 class="card-title mb-2 fw-bold">🕓 Sessões de Importação</h6>
-            <div id="reqSessionList" class="d-flex flex-column gap-1" style="max-height:340px;overflow-y:auto">
-              <div class="text-muted small text-center py-3">Nenhuma sessão ainda</div>
-            </div>
-          </div>
-        </div>
+        </div><!-- /col-lg-3 -->
 
-        <!-- Right: dashboard -->
+        <!-- Right: sub-tabbed dashboard -->
         <div class="col-lg-9">
 
-          <!-- Cards -->
-          <div class="row g-2 mb-3" id="reqCards">
-            <div class="col-6 col-md-3">
-              <div class="mini-stat" style="background:#0d6efd">
-                <div><div class="num" id="reqCTotal">—</div><div class="lbl">Registros</div></div>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <div class="mini-stat" style="background:#dc3545">
-                <div><div class="num" id="reqCSem">—</div><div class="lbl">Sem Retorno</div></div>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <div class="mini-stat" style="background:#198754">
-                <div><div class="num" id="reqCCom">—</div><div class="lbl">Com Retorno</div></div>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <div class="mini-stat" style="background:#6f42c1">
-                <div><div class="num" id="reqCPerc">—</div><div class="lbl">% Com Retorno</div></div>
-              </div>
-            </div>
-          </div>
+          <!-- Sub-navigation pills -->
+          <ul class="nav nav-pills mb-3 gap-1">
+            <li class="nav-item">
+              <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#viewRetorno" id="pillRetorno">
+                📋 Retorno
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-bs-toggle="pill" data-bs-target="#viewTestes" id="pillTestes"
+                onclick="loadTestesDashboard()">
+                🧪 Testes de Cópias
+              </button>
+            </li>
+          </ul>
 
-          <!-- Filters -->
-          <div class="card chart-card p-2 mb-3">
-            <div class="row g-2 align-items-end">
-              <div class="col-sm-2">
-                <label class="form-label form-label-sm mb-1">De</label>
-                <input type="date" id="rqFDe" class="form-control form-control-sm">
-              </div>
-              <div class="col-sm-2">
-                <label class="form-label form-label-sm mb-1">Até</label>
-                <input type="date" id="rqFAte" class="form-control form-control-sm">
-              </div>
-              <div class="col-sm-3">
-                <label class="form-label form-label-sm mb-1">Versão</label>
-                <input type="text" id="rqFVersao" class="form-control form-control-sm" placeholder="Ex: 48.02">
-              </div>
-              <div class="col-sm-2">
-                <label class="form-label form-label-sm mb-1">Operador</label>
-                <select id="rqFOperador" class="form-select form-select-sm">
-                  <option value="">Todos</option>
-                </select>
-              </div>
-              <div class="col-sm-2">
-                <label class="form-label form-label-sm mb-1">Retorno</label>
-                <select id="rqFRetorno" class="form-select form-select-sm">
-                  <option value="">Todos</option>
-                  <option value="Sim">Sim</option>
-                  <option value="Não">Não</option>
-                </select>
-              </div>
-              <div class="col-sm-auto">
-                <button class="btn btn-primary btn-sm" onclick="applyReqFilter()">🔍</button>
-                <button class="btn btn-outline-secondary btn-sm" onclick="clearReqFilters()">✖</button>
-              </div>
-            </div>
-          </div>
+          <div class="tab-content">
 
-          <!-- Charts -->
-          <div class="row g-3 mb-3">
-            <div class="col-md-6">
+            <!-- ── Retorno view ───────────────────────────────────────── -->
+            <div class="tab-pane fade show active" id="viewRetorno">
+
+              <!-- Cards -->
+              <div class="row g-2 mb-3">
+                <div class="col-6 col-md-3">
+                  <div class="mini-stat" style="background:#0d6efd">
+                    <div><div class="num" id="reqCTotal">—</div><div class="lbl">Registros</div></div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="mini-stat" style="background:#dc3545">
+                    <div><div class="num" id="reqCSem">—</div><div class="lbl">Sem Retorno</div></div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="mini-stat" style="background:#198754">
+                    <div><div class="num" id="reqCCom">—</div><div class="lbl">Com Retorno</div></div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="mini-stat" style="background:#6f42c1">
+                    <div><div class="num" id="reqCPerc">—</div><div class="lbl">% Com Retorno</div></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Filters -->
+              <div class="card chart-card p-2 mb-3">
+                <div class="row g-2 align-items-end">
+                  <div class="col-sm-2">
+                    <label class="form-label form-label-sm mb-1">De</label>
+                    <input type="date" id="rqFDe" class="form-control form-control-sm">
+                  </div>
+                  <div class="col-sm-2">
+                    <label class="form-label form-label-sm mb-1">Até</label>
+                    <input type="date" id="rqFAte" class="form-control form-control-sm">
+                  </div>
+                  <div class="col-sm-3">
+                    <label class="form-label form-label-sm mb-1">Versão</label>
+                    <input type="text" id="rqFVersao" class="form-control form-control-sm" placeholder="Ex: 48.02">
+                  </div>
+                  <div class="col-sm-2">
+                    <label class="form-label form-label-sm mb-1">Operador</label>
+                    <select id="rqFOperador" class="form-select form-select-sm">
+                      <option value="">Todos</option>
+                    </select>
+                  </div>
+                  <div class="col-sm-2">
+                    <label class="form-label form-label-sm mb-1">Retorno</label>
+                    <select id="rqFRetorno" class="form-select form-select-sm">
+                      <option value="">Todos</option>
+                      <option value="Sim">Sim</option>
+                      <option value="Não">Não</option>
+                    </select>
+                  </div>
+                  <div class="col-sm-auto">
+                    <button class="btn btn-primary btn-sm" onclick="applyReqFilter()">🔍</button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="clearReqFilters()">✖</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Charts -->
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <div class="card chart-card p-3">
+                    <h6 class="card-title text-muted mb-2">Por Versão — Sem vs Com Retorno</h6>
+                    <canvas id="chartReqVersao" height="180"></canvas>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="card chart-card p-3">
+                    <h6 class="card-title text-muted mb-2">Por Operador — Sem vs Com Retorno</h6>
+                    <canvas id="chartReqOperador" height="180"></canvas>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Per-Operator Performance -->
+              <div class="card chart-card p-3 mb-3">
+                <h6 class="card-title text-muted mb-2">📊 Desempenho por Operador</h6>
+                <div class="table-container" style="max-height:240px">
+                  <table class="table table-sm table-hover mb-0">
+                    <thead>
+                      <tr>
+                        <th>Código</th><th>Nome</th>
+                        <th class="text-end">Sem Ret.</th><th class="text-end">Com Ret.</th>
+                        <th class="text-end">Total</th><th class="text-end">% Ret.</th><th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="opePerformTBody">
+                      <tr><td colspan="7" class="text-center text-muted py-2">Importe dados para visualizar</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Detail table -->
               <div class="card chart-card p-3">
-                <h6 class="card-title text-muted mb-2">Por Versão — Sem vs Com Retorno</h6>
-                <canvas id="chartReqVersao" height="180"></canvas>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h6 class="card-title text-muted mb-0">Registros Detalhados</h6>
+                  <input type="text" id="reqQuickFilter" class="form-control form-control-sm" style="max-width:200px"
+                    placeholder="Filtrar tabela…" oninput="filterReqTable(this.value)">
+                </div>
+                <div class="table-container">
+                  <table class="table table-sm table-hover mb-0">
+                    <thead>
+                      <tr>
+                        <th>Data</th><th>Versão</th><th>Operador</th>
+                        <th class="text-end">Sem Ret.</th><th class="text-end">Com Ret.</th>
+                        <th class="text-end">Total</th><th class="text-end">Qtd Req</th>
+                        <th>Retorno</th><th>Req Sem Retorno</th>
+                      </tr>
+                    </thead>
+                    <tbody id="reqTBody">
+                      <tr><td colspan="9" class="text-center text-muted py-3">Importe dados de retorno</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-            <div class="col-md-6">
+
+            </div><!-- /viewRetorno -->
+
+            <!-- ── Testes view ─────────────────────────────────────────── -->
+            <div class="tab-pane fade" id="viewTestes">
+
+              <!-- Cards -->
+              <div class="row g-2 mb-3">
+                <div class="col-6 col-md-3">
+                  <div class="mini-stat" style="background:#0d6efd">
+                    <div><div class="num" id="testesCTotal">—</div><div class="lbl">Registros</div></div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="mini-stat" style="background:#198754">
+                    <div><div class="num" id="testesCCom">—</div><div class="lbl">Com Teste</div></div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="mini-stat" style="background:#dc3545">
+                    <div><div class="num" id="testesCSem">—</div><div class="lbl">Sem Teste</div></div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="mini-stat" style="background:#6f42c1">
+                    <div><div class="num" id="testesCPerc">—</div><div class="lbl">% Com Teste</div></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Filters -->
+              <div class="card chart-card p-2 mb-3">
+                <div class="row g-2 align-items-end">
+                  <div class="col-sm-2">
+                    <label class="form-label form-label-sm mb-1">De</label>
+                    <input type="date" id="tsFDe" class="form-control form-control-sm">
+                  </div>
+                  <div class="col-sm-2">
+                    <label class="form-label form-label-sm mb-1">Até</label>
+                    <input type="date" id="tsFAte" class="form-control form-control-sm">
+                  </div>
+                  <div class="col-sm-2">
+                    <label class="form-label form-label-sm mb-1">Versão</label>
+                    <input type="text" id="tsFVersao" class="form-control form-control-sm" placeholder="Ex: 48.02">
+                  </div>
+                  <div class="col-sm-2">
+                    <label class="form-label form-label-sm mb-1">Operador</label>
+                    <select id="tsFOperador" class="form-select form-select-sm">
+                      <option value="">Todos</option>
+                    </select>
+                  </div>
+                  <div class="col-sm-2">
+                    <label class="form-label form-label-sm mb-1">Célula</label>
+                    <select id="tsFCelula" class="form-select form-select-sm">
+                      <option value="">Todas</option>
+                    </select>
+                  </div>
+                  <div class="col-sm-auto">
+                    <button class="btn btn-warning btn-sm text-dark" onclick="applyTestesFilter()">🔍</button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="clearTestesFilters()">✖</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Charts -->
+              <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                  <div class="card chart-card p-3">
+                    <h6 class="card-title text-muted mb-2">Por Versão</h6>
+                    <canvas id="chartTestesVersao" height="200"></canvas>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="card chart-card p-3">
+                    <h6 class="card-title text-muted mb-2">Por Operador</h6>
+                    <canvas id="chartTestesOperador" height="200"></canvas>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="card chart-card p-3">
+                    <h6 class="card-title text-muted mb-2">Por Célula</h6>
+                    <canvas id="chartTestesCelula" height="200"></canvas>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Detail table -->
               <div class="card chart-card p-3">
-                <h6 class="card-title text-muted mb-2">Por Operador — Sem vs Com Retorno</h6>
-                <canvas id="chartReqOperador" height="180"></canvas>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h6 class="card-title text-muted mb-0">Registros Detalhados</h6>
+                  <input type="text" id="testesQuickFilter" class="form-control form-control-sm" style="max-width:200px"
+                    placeholder="Filtrar tabela…" oninput="filterTestesTable(this.value)">
+                </div>
+                <div class="table-container">
+                  <table class="table table-sm table-hover mb-0">
+                    <thead>
+                      <tr>
+                        <th>Data</th><th>Versão</th><th>Operador</th>
+                        <th class="text-end">Com Teste</th><th class="text-end">Sem Teste</th>
+                        <th class="text-end">Total</th>
+                        <th>Tipo</th><th>Célula</th><th>Requisitos</th>
+                      </tr>
+                    </thead>
+                    <tbody id="testesTBody">
+                      <tr><td colspan="9" class="text-center text-muted py-3">Importe dados de testes</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <!-- Per-Operator Performance -->
-          <div class="card chart-card p-3 mb-3">
-            <h6 class="card-title text-muted mb-2">📊 Desempenho por Operador</h6>
-            <div class="table-container" style="max-height:260px">
-              <table class="table table-sm table-hover mb-0">
-                <thead>
-                  <tr>
-                    <th>Código</th>
-                    <th>Nome</th>
-                    <th class="text-end">Sem Ret.</th>
-                    <th class="text-end">Com Ret.</th>
-                    <th class="text-end">Total</th>
-                    <th class="text-end">% Ret.</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody id="opePerformTBody">
-                  <tr><td colspan="7" class="text-center text-muted py-2">Importe dados para visualizar</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+            </div><!-- /viewTestes -->
 
-          <!-- Table -->
-          <div class="card chart-card p-3">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <h6 class="card-title text-muted mb-0">Registros Detalhados</h6>
-              <input type="text" id="reqQuickFilter" class="form-control form-control-sm" style="max-width:200px"
-                placeholder="Filtrar tabela…" oninput="filterReqTable(this.value)">
-            </div>
-            <div class="table-container">
-              <table class="table table-sm table-hover mb-0" id="reqTable">
-                <thead>
-                  <tr>
-                    <th>Data</th>
-                    <th>Versão</th>
-                    <th>Operador</th>
-                    <th class="text-end">Sem Ret.</th>
-                    <th class="text-end">Com Ret.</th>
-                    <th class="text-end">Total</th>
-                    <th class="text-end">Qtd Req</th>
-                    <th>Retorno</th>
-                    <th>Req Sem Retorno</th>
-                  </tr>
-                </thead>
-                <tbody id="reqTBody">
-                  <tr><td colspan="9" class="text-center text-muted py-3">Nenhum dado — importe um JSON ou selecione uma sessão</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
+          </div><!-- /sub tab-content -->
         </div><!-- /col-lg-9 -->
       </div><!-- /row -->
     </div><!-- /tabReq -->
@@ -815,6 +953,32 @@ WHERE OPE_LOGOPE IN (
       </div>
       <div class="modal-footer">
         <button class="btn btn-success" id="btnConfirmSaveCadOpe" onclick="confirmarSalvarCadOpe()">✅ Confirmar e Salvar</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Testes JSON Validation Modal ────────────────────────────────────────── -->
+<div class="modal fade" id="testesValidModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">🧪 Validação do JSON — Testes de Cópias</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="testesValidErrors" class="alert alert-danger d-none"></div>
+        <div id="testesValidInfo"   class="alert alert-success d-none"></div>
+        <div class="table-responsive" style="max-height:400px;overflow-y:auto">
+          <table class="table table-sm table-bordered">
+            <thead class="table-dark" id="testesPreviewHead"></thead>
+            <tbody id="testesPreviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-success" id="btnConfirmSaveTestes" onclick="confirmarSalvarTestes()">✅ Confirmar e Salvar</button>
         <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
       </div>
     </div>
