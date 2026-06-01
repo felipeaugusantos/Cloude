@@ -13,6 +13,7 @@ body{
   font-size:.875rem;
   color:var(--dash-ink);
   background:linear-gradient(180deg,#eef3ff 0,#f5f7fb 260px),#f5f7fb;
+  overflow-x:hidden;
 }
 .app-shell{max-width:1680px}
 
@@ -58,7 +59,11 @@ body{
   top:.75rem;
   z-index:20;
   backdrop-filter:saturate(140%) blur(8px);
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  overflow-y:hidden;
 }
+.dashboard-tabs .nav-item{flex:0 0 auto}
 .dashboard-tabs .nav-link{
   border:0;
   border-radius:9px;
@@ -129,9 +134,15 @@ tr.sem-caminho-row:hover td{background:#ffd0d0 !important}
 .bi-kpi-card strong{color:#0f172a;font-size:2rem;line-height:1;font-weight:800}
 .bi-panel{
   height:100%;min-height:245px;padding:1rem;background:#fff;border:1px solid #e7edf5;
-  border-radius:10px;box-shadow:var(--dash-shadow-sm)
+  border-radius:10px;box-shadow:var(--dash-shadow-sm);overflow:hidden
 }
 .bi-panel h6{color:#8a98a8;font-size:.82rem;font-weight:700;margin-bottom:.8rem}
+
+/* Keep the KPI Tester dashboard inside its tab instead of widening the page. */
+#tabReq,#tabReq .tab-content,#tabReq .tab-pane,
+#tabReq .row>[class*="col-"],#tabReq .chart-card,#tabReq .bi-panel{min-width:0;max-width:100%}
+#tabReq canvas{display:block;max-width:100%!important}
+#tabReq .table-container,#tabReq .table-responsive{max-width:100%;overflow:auto}
 
 /* Decision center */
 .decision-config{
@@ -280,7 +291,7 @@ tfoot tr td{font-weight:700;background:#202939 !important;color:#fff !important}
 .page-item .page-link{font-size:.8rem;padding:.3rem .6rem}
 
 @media (max-width:768px){
-  .dashboard-tabs{position:static;overflow-x:auto;flex-wrap:nowrap}
+  .dashboard-tabs{position:static}
   .dashboard-header{border-radius:12px}
 }
 </style>
