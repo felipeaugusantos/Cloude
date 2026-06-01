@@ -15,7 +15,7 @@ body{
   background:linear-gradient(180deg,#eef3ff 0,#f5f7fb 260px),#f5f7fb;
   overflow-x:hidden;
 }
-.app-shell{max-width:1680px}
+.app-shell{width:100%;max-width:1680px;overflow-x:hidden}
 
 /* Header */
 .dashboard-header{
@@ -141,8 +141,11 @@ tr.sem-caminho-row:hover td{background:#ffd0d0 !important}
 /* Keep the KPI Tester dashboard inside its tab instead of widening the page. */
 #tabReq,#tabReq .tab-content,#tabReq .tab-pane,
 #tabReq .row>[class*="col-"],#tabReq .chart-card,#tabReq .bi-panel{min-width:0;max-width:100%}
-#tabReq canvas{display:block;max-width:100%!important}
+#tabReq canvas{display:block;width:100%!important;max-width:100%!important}
 #tabReq .table-container,#tabReq .table-responsive{max-width:100%;overflow:auto}
+#mgChartMonthly,#mgChartVariation{height:220px!important}
+#mgChartCells,#mgChartOperators{height:320px!important}
+#mgChartWeekday,#mgChartVersions{height:260px!important}
 
 /* Decision center */
 .decision-config{
