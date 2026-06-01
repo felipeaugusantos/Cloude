@@ -1189,6 +1189,24 @@ function getReqDashboard(filtersJson) {
       });
     }
 
+    // Load operator names (best-effort — Operadores sheet may not exist yet)
+    var opeNamesMap = {};
+    try {
+      var opeSheetLocal = ss.getSheetByName("Operadores");
+      if (opeSheetLocal) {
+        var opeDataLocal = opeSheetLocal.getDataRange().getValues();
+        for (var oi = 1; oi < opeDataLocal.length; oi++) {
+          var oc = String(opeDataLocal[oi][0] || "").trim().toUpperCase();
+          if (oc) opeNamesMap[oc] = String(opeDataLocal[oi][1] || "");
+        }
+      }
+    } catch(eOpe) {}
+
+    // Enrich items with operator name
+    items.forEach(function(r) {
+      r.nomeOpe = opeNamesMap[r.operador.toUpperCase()] || "";
+    });
+
     // Summary cards
     var totalReg    = items.length;
     var semRetorno  = items.reduce(function(s,r){ return s+r.semRetorno; }, 0);
@@ -1205,14 +1223,23 @@ function getReqDashboard(filtersJson) {
     });
     var byVersao = Object.values(versaoMap).sort(function(a,b){ return (b.sem+b.com)-(a.sem+a.com); });
 
-    // By operador
+    // By operador — enriched with name and %
     var opMap = {};
     items.forEach(function(r) {
-      if (!opMap[r.operador]) opMap[r.operador] = { operador:r.operador, sem:0, com:0 };
-      opMap[r.operador].sem += r.semRetorno;
-      opMap[r.operador].com += r.comRetorno;
+      var key = r.operador;
+      if (!opMap[key]) opMap[key] = {
+        operador: key,
+        nome:     opeNamesMap[key.toUpperCase()] || "",
+        sem: 0, com: 0, total: 0,
+      };
+      opMap[key].sem   += r.semRetorno;
+      opMap[key].com   += r.comRetorno;
+      opMap[key].total += r.total;
     });
-    var byOperador = Object.values(opMap).sort(function(a,b){ return (b.sem+b.com)-(a.sem+a.com); });
+    var byOperador = Object.values(opMap).map(function(e) {
+      return { operador:e.operador, nome:e.nome, sem:e.sem, com:e.com, total:e.total,
+               perc: e.total > 0 ? Math.round(e.com*100/e.total) : 0 };
+    }).sort(function(a,b){ return (b.sem+b.com)-(a.sem+a.com); });
 
     var versaoList   = [...new Set(items.map(function(r){ return r.versao;   }).filter(Boolean))].sort();
     var operadorList = [...new Set(items.map(function(r){ return r.operador; }).filter(Boolean))].sort();
@@ -1225,10 +1252,139 @@ function getReqDashboard(filtersJson) {
       byOperador:   byOperador,
       versaoList:   versaoList,
       operadorList: operadorList,
+      opeNames:     opeNamesMap,
       rows:         items,
     };
   } catch(e) {
     logEvent_("ERROR", "REQ", "getReqDashboard", "Erro ao carregar dashboard", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// ─── Operadores — constants & functions ───────────────────────────────────────
+const OPE_HEADER = ["OPE_LOGOPE", "OPE_DESCRI", "IMPORT_TS"];
+
+function saveOperadores(jsonString) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = getSpreadsheet_();
+    const tz = ss.getSpreadsheetTimeZone();
+    const ts = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
+
+    let data;
+    try { data = JSON.parse(jsonString); } catch(e) {
+      return { ok: false, error: "JSON inválido: " + e.message };
+    }
+    if (!Array.isArray(data)) data = [data];
+
+    const errors = [];
+    const rows   = [];
+    data.forEach(function(item, idx) {
+      const code = String(item.OPE_LOGOPE || "").trim();
+      if (!code) { errors.push("Linha " + (idx+1) + ": OPE_LOGOPE ausente"); return; }
+      rows.push([code.toUpperCase(), String(item.OPE_DESCRI || ""), ts]);
+    });
+
+    if (errors.length) return { ok: false, error: errors.join("\n") };
+
+    const sheet   = ensureSheet_(ss, "Operadores", OPE_HEADER);
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, OPE_HEADER.length).clearContent();
+    if (rows.length) {
+      sheet.getRange(2, 1, rows.length, OPE_HEADER.length).setValues(rows);
+    }
+    logEvent_("INFO", "OPE", "saveOperadores", "Cadastro atualizado", rows.length + " operadores");
+    return { ok: true, total: rows.length };
+  } catch(e) {
+    logEvent_("ERROR", "OPE", "saveOperadores", "Erro ao salvar operadores", e.message);
+    return { ok: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getOperadores() {
+  try {
+    const ss    = getSpreadsheet_();
+    const sheet = ensureSheet_(ss, "Operadores", OPE_HEADER);
+    const data  = sheet.getDataRange().getValues();
+    if (data.length <= 1) return { ok: true, operadores: [] };
+    const operadores = [];
+    for (let i = 1; i < data.length; i++) {
+      const code = String(data[i][0] || "").trim();
+      if (code) operadores.push({ code, nome: String(data[i][1] || ""), ts: String(data[i][2] || "") });
+    }
+    return { ok: true, operadores };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function getOperadoresMetrics() {
+  try {
+    const ss  = getSpreadsheet_();
+    const tz  = ss.getSpreadsheetTimeZone();
+
+    // Operator name map
+    const opeMap  = {};
+    const opeSheet = ensureSheet_(ss, "Operadores", OPE_HEADER);
+    const opeData  = opeSheet.getDataRange().getValues();
+    if (opeData.length > 1) {
+      for (let i = 1; i < opeData.length; i++) {
+        const c = String(opeData[i][0] || "").trim().toUpperCase();
+        if (c) opeMap[c] = String(opeData[i][1] || "");
+      }
+    }
+
+    // Aggregate REQ_Historico
+    const reqSheet = ensureSheet_(ss, "REQ_Historico", REQ_HEADER);
+    const rawData  = reqSheet.getDataRange().getValues();
+
+    const metricsMap = {};
+    // Pre-seed from registered operators
+    Object.keys(opeMap).forEach(code => {
+      metricsMap[code] = { code, nome: opeMap[code], sem:0, com:0, total:0, totalReq:0, registros:0, diasSet: new Set() };
+    });
+
+    if (rawData.length > 1) {
+      const hdr = rawData[0].map(h => String(h).trim().toUpperCase());
+      const ci  = {};
+      REQ_HEADER.forEach((col, idx) => { ci[col] = hdr.indexOf(col); if (ci[col]<0) ci[col]=idx; });
+
+      for (let i = 1; i < rawData.length; i++) {
+        const r    = rawData[i];
+        const code = String(r[ci["OPE_CONFER"]] || "").trim().toUpperCase();
+        if (!code) continue;
+        if (!metricsMap[code]) metricsMap[code] = { code, nome: opeMap[code] || "", sem:0, com:0, total:0, totalReq:0, registros:0, diasSet: new Set() };
+        const m = metricsMap[code];
+        m.sem      += Number(r[ci["TOTAL_SEM_RETORNO"]]       || 0);
+        m.com      += Number(r[ci["TOTAL_COM_RETORNO"]]       || 0);
+        m.total    += Number(r[ci["TOTAL_COM_E_SEM_RETORNO"]] || 0);
+        m.totalReq += Number(r[ci["TOTAL_REQ_RETORNO"]]       || 0);
+        m.registros++;
+        const dt = r[ci["ALT_DTATST"]] instanceof Date
+          ? Utilities.formatDate(r[ci["ALT_DTATST"]], tz, "yyyy-MM-dd")
+          : String(r[ci["ALT_DTATST"]] || "").trim();
+        if (dt) m.diasSet.add(dt);
+      }
+    }
+
+    const operadores = Object.values(metricsMap).map(m => ({
+      code:      m.code,
+      nome:      m.nome,
+      registros: m.registros,
+      sem:       m.sem,
+      com:       m.com,
+      total:     m.total,
+      totalReq:  m.totalReq,
+      perc:      m.total > 0 ? Math.round(m.com * 100 / m.total) : 0,
+      dias:      m.diasSet.size,
+    })).sort((a, b) => b.total - a.total);
+
+    return { ok: true, operadores };
+  } catch(e) {
+    logEvent_("ERROR", "OPE", "getOperadoresMetrics", "Erro ao calcular métricas", e.message);
     return { ok: false, error: e.message };
   }
 }

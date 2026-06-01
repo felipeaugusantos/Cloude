@@ -100,7 +100,8 @@
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabDash">📊 Dashboard Geral</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabRel">📈 Relatórios Inteligentes</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabKpi" id="kpiTabBtn">🎯 KPI Fechamento</button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabReq" id="reqTabBtn">📋 Req. Retorno</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabReq"    id="reqTabBtn">🧪 KPI TESTER</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCadOpe" id="cadOpeTabBtn">👥 Cadastro Operadores</button></li>
   </ul>
 
   <div class="tab-content">
@@ -483,6 +484,21 @@
             </div>
           </div>
 
+          <!-- Operator import -->
+          <div class="card chart-card p-3 mb-3">
+            <h6 class="card-title mb-2 fw-bold">👤 Importar Operadores</h6>
+            <p class="text-muted" style="font-size:.72rem;margin-bottom:.4rem">
+              JSON de <code>SELECT OPE_LOGOPE, OPE_DESCRI FROM cadope</code>
+            </p>
+            <textarea id="opeJsonInput" class="form-control form-control-sm font-monospace mb-2"
+              rows="4" placeholder='[{"OPE_LOGOPE":"H75","OPE_DESCRI":"João Silva"},…]'></textarea>
+            <div class="d-flex gap-2">
+              <button class="btn btn-outline-primary btn-sm flex-grow-1" onclick="validateOpeJson()">🔍 Validar / Salvar</button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('opeJsonInput').value=''">🗑</button>
+            </div>
+            <div id="opeImportStatus" class="mt-1 small"></div>
+          </div>
+
           <div class="card chart-card p-3">
             <h6 class="card-title mb-2 fw-bold">🕓 Sessões de Importação</h6>
             <div id="reqSessionList" class="d-flex flex-column gap-1" style="max-height:340px;overflow-y:auto">
@@ -570,6 +586,29 @@
             </div>
           </div>
 
+          <!-- Per-Operator Performance -->
+          <div class="card chart-card p-3 mb-3">
+            <h6 class="card-title text-muted mb-2">📊 Desempenho por Operador</h6>
+            <div class="table-container" style="max-height:260px">
+              <table class="table table-sm table-hover mb-0">
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Nome</th>
+                    <th class="text-end">Sem Ret.</th>
+                    <th class="text-end">Com Ret.</th>
+                    <th class="text-end">Total</th>
+                    <th class="text-end">% Ret.</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="opePerformTBody">
+                  <tr><td colspan="7" class="text-center text-muted py-2">Importe dados para visualizar</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- Table -->
           <div class="card chart-card p-3">
             <div class="d-flex justify-content-between align-items-center mb-2">
@@ -603,6 +642,109 @@
       </div><!-- /row -->
     </div><!-- /tabReq -->
 
+    <!-- ══ TAB CADASTRO OPERADORES ═══════════════════════════════════════ -->
+    <div class="tab-pane fade" id="tabCadOpe">
+      <div class="row g-3">
+
+        <!-- Left: import -->
+        <div class="col-lg-3">
+          <div class="card chart-card p-3 mb-3">
+            <h6 class="card-title mb-1 fw-bold">📥 Importar Cadastro</h6>
+            <p class="text-muted" style="font-size:.72rem;margin-bottom:.5rem">
+              Execute o SELECT abaixo no banco e cole o JSON:
+            </p>
+            <code class="d-block bg-light rounded p-2 mb-2" style="font-size:.68rem;white-space:pre-wrap">SELECT OPE_LOGOPE, OPE_DESCRI
+FROM cadope
+WHERE OPE_LOGOPE IN (
+  'H75','P04','A64','I45','N52',
+  'A12','H47','H26','J69','H52',
+  'H14','N67','N44','N57','J86',
+  'P68','N87','H48','M73')</code>
+            <textarea id="cadOpeJsonInput" class="form-control form-control-sm font-monospace mb-2"
+              rows="6" placeholder='[{"OPE_LOGOPE":"H75","OPE_DESCRI":"João Silva"},…]'></textarea>
+            <div class="d-flex gap-2">
+              <button class="btn btn-primary btn-sm flex-grow-1" onclick="validateCadOpeJson()">🔍 Validar / Preview</button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('cadOpeJsonInput').value=''">🗑</button>
+            </div>
+            <div id="cadOpeImportStatus" class="mt-2 small"></div>
+          </div>
+
+          <!-- Stats card -->
+          <div class="card chart-card p-3">
+            <h6 class="card-title mb-2 fw-bold">📋 Resumo</h6>
+            <div class="d-flex flex-column gap-2">
+              <div class="d-flex justify-content-between small">
+                <span class="text-muted">Operadores cadastrados</span>
+                <strong id="cadOpeTotalReg">—</strong>
+              </div>
+              <div class="d-flex justify-content-between small">
+                <span class="text-muted">Com dados importados</span>
+                <strong id="cadOpeComDados">—</strong>
+              </div>
+              <div class="d-flex justify-content-between small">
+                <span class="text-muted">Média % retorno</span>
+                <strong id="cadOpeMediaPerc">—</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: metrics table + charts -->
+        <div class="col-lg-9">
+
+          <!-- Quick filter -->
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0 fw-bold">Desempenho Individual dos Operadores</h6>
+            <input type="text" id="cadOpeFilter" class="form-control form-control-sm" style="max-width:200px"
+              placeholder="Buscar operador…" oninput="filterCadOpe(this.value)">
+          </div>
+
+          <!-- Metrics table -->
+          <div class="card chart-card p-3 mb-3">
+            <div class="table-container" style="max-height:380px">
+              <table class="table table-sm table-hover mb-0" id="cadOpeTable">
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Nome</th>
+                    <th class="text-end">Registros</th>
+                    <th class="text-end">Dias</th>
+                    <th class="text-end">Sem Ret.</th>
+                    <th class="text-end">Com Ret.</th>
+                    <th class="text-end">Total Cópias</th>
+                    <th class="text-end">Req Retorno</th>
+                    <th class="text-end">% Retorno</th>
+                    <th>Progresso</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="cadOpeTBody">
+                  <tr><td colspan="11" class="text-center text-muted py-3">Importe o cadastro para visualizar as métricas</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Charts -->
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="card chart-card p-3">
+                <h6 class="card-title text-muted mb-2">% Retorno por Operador</h6>
+                <canvas id="chartCadOpePerc" height="200"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card chart-card p-3">
+                <h6 class="card-title text-muted mb-2">Volume — Sem vs Com Retorno</h6>
+                <canvas id="chartCadOpeVol" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /col-lg-9 -->
+      </div><!-- /row -->
+    </div><!-- /tabCadOpe -->
+
   </div><!-- /tab-content -->
 </div><!-- /container -->
 
@@ -622,6 +764,58 @@
         <span id="chatReportDate" class="text-muted small me-auto"></span>
         <button class="btn btn-success btn-sm" onclick="copiarRelatorioChat()">📋 Copiar</button>
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Operadores Validation Modal (KPI TESTER inline) ──────────────────────── -->
+<div class="modal fade" id="opeValidModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">👤 Validação — Operadores</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="opeValidErrors" class="alert alert-danger d-none"></div>
+        <div id="opeValidInfo"   class="alert alert-success d-none"></div>
+        <div class="table-responsive" style="max-height:320px;overflow-y:auto">
+          <table class="table table-sm table-bordered">
+            <thead class="table-dark" id="opePreviewHead"></thead>
+            <tbody id="opePreviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-success" id="btnConfirmSaveOpe" onclick="confirmarSalvarOpe()">✅ Confirmar e Salvar</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Cadastro Operadores Validation Modal ──────────────────────────────────── -->
+<div class="modal fade" id="cadOpeValidModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">👥 Validação — Cadastro Operadores</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cadOpeValidErrors" class="alert alert-danger d-none"></div>
+        <div id="cadOpeValidInfo"   class="alert alert-success d-none"></div>
+        <div class="table-responsive" style="max-height:320px;overflow-y:auto">
+          <table class="table table-sm table-bordered">
+            <thead class="table-dark" id="cadOpePreviewHead"></thead>
+            <tbody id="cadOpePreviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-success" id="btnConfirmSaveCadOpe" onclick="confirmarSalvarCadOpe()">✅ Confirmar e Salvar</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
       </div>
     </div>
   </div>

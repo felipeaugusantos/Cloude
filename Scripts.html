@@ -1147,7 +1147,81 @@ function clearRelFilters() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// REQ. RETORNO tab
+// KPI TESTER — Operator import (inline in left panel)
+// ═══════════════════════════════════════════════════════════════════════════
+var opePendingJson = null;
+
+function validateOpeJson() {
+  var raw = (document.getElementById('opeJsonInput').value || '').trim();
+  if (!raw) { showSystemMsg('warning', 'Cole o JSON antes de validar.'); return; }
+
+  var data;
+  try { data = JSON.parse(raw); } catch(e) {
+    showSystemMsg('danger', 'JSON inválido: ' + e.message);
+    return;
+  }
+  if (!Array.isArray(data)) data = [data];
+
+  var errors = [];
+  var valid  = [];
+  data.forEach(function(item, idx) {
+    if (!item.OPE_LOGOPE) { errors.push('Linha ' + (idx+1) + ': OPE_LOGOPE ausente'); return; }
+    valid.push(item);
+  });
+
+  var errEl  = document.getElementById('opeValidErrors');
+  var infoEl = document.getElementById('opeValidInfo');
+  if (errors.length) {
+    errEl.textContent = errors.slice(0,5).join(' | ');
+    errEl.classList.remove('d-none');
+    infoEl.classList.add('d-none');
+    document.getElementById('btnConfirmSaveOpe').disabled = true;
+  } else {
+    errEl.classList.add('d-none');
+    infoEl.textContent = '✅ ' + valid.length + ' operador(es) válido(s). Confirme para salvar.';
+    infoEl.classList.remove('d-none');
+    document.getElementById('btnConfirmSaveOpe').disabled = false;
+  }
+
+  var head = document.getElementById('opePreviewHead');
+  var body = document.getElementById('opePreviewBody');
+  head.innerHTML = '<tr><th>OPE_LOGOPE</th><th>OPE_DESCRI</th></tr>';
+  body.innerHTML = data.slice(0, 30).map(function(item) {
+    return '<tr><td>' + esc(item.OPE_LOGOPE || '') + '</td><td>' + esc(item.OPE_DESCRI || '') + '</td></tr>';
+  }).join('');
+
+  opePendingJson = valid.length ? JSON.stringify(data) : null;
+  new bootstrap.Modal(document.getElementById('opeValidModal')).show();
+}
+
+function confirmarSalvarOpe() {
+  if (!opePendingJson) return;
+  document.getElementById('btnConfirmSaveOpe').disabled = true;
+  document.getElementById('btnConfirmSaveOpe').textContent = '⏳ Salvando…';
+  bootstrap.Modal.getInstance(document.getElementById('opeValidModal')).hide();
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      document.getElementById('btnConfirmSaveOpe').textContent = '✅ Confirmar e Salvar';
+      if (res.ok) {
+        var st = document.getElementById('opeImportStatus');
+        st.innerHTML = '<span class="text-success">✅ ' + res.total + ' operador(es) salvo(s)</span>';
+        document.getElementById('opeJsonInput').value = '';
+        opePendingJson = null;
+        loadReqDashboard(); // refresh charts with new names
+      } else {
+        showSystemMsg('danger', 'Erro ao salvar operadores: ' + res.error);
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('btnConfirmSaveOpe').textContent = '✅ Confirmar e Salvar';
+      showSystemMsg('danger', 'Falha: ' + err.message);
+    })
+    .saveOperadores(opePendingJson);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// KPI TESTER tab (Req. Retorno)
 // ═══════════════════════════════════════════════════════════════════════════
 var reqPendingJson = null;  // holds validated JSON array before confirming save
 var reqAllRows     = [];    // current rendered table rows (for quick filter)
@@ -1239,13 +1313,15 @@ function loadReqDashboard(sessionId) {
   google.script.run
     .withSuccessHandler(function(resp) {
       if (!resp.ok) { showSystemMsg('danger', 'Erro: ' + resp.error); return; }
+      var opeNames = resp.opeNames || {};
       renderReqSessions(resp.sessions, sessionId || null);
       renderReqCards(resp.cards);
       renderReqCharts(resp.byVersao, resp.byOperador);
-      renderReqTable(resp.rows);
-      populateReqOperadorSelect(resp.operadorList);
+      renderOpePerformanceTable(resp.byOperador);
+      renderReqTable(resp.rows, opeNames);
+      populateReqOperadorSelect(resp.operadorList, opeNames);
     })
-    .withFailureHandler(function(err){ showSystemMsg('danger', 'Erro ao carregar Req. Retorno: ' + err.message); })
+    .withFailureHandler(function(err){ showSystemMsg('danger', 'Erro ao carregar KPI TESTER: ' + err.message); })
     .getReqDashboard(JSON.stringify(filters));
 }
 
@@ -1268,14 +1344,16 @@ function clearReqFilters() {
   loadReqDashboard();
 }
 
-// ── Populate operador dropdown (preserve current selection) ───────────────
-function populateReqOperadorSelect(list) {
+// ── Populate operador dropdown — show "CODE — Nome" when name available ───
+function populateReqOperadorSelect(list, opeNames) {
   var sel = document.getElementById('rqFOperador');
   var cur = sel.value;
   sel.innerHTML = '<option value="">Todos</option>';
   (list||[]).forEach(function(op){
-    var opt = document.createElement('option');
-    opt.value = op; opt.textContent = op;
+    var opt  = document.createElement('option');
+    var nome = opeNames && opeNames[op.toUpperCase()];
+    opt.value = op;
+    opt.textContent = nome ? op + ' — ' + nome : op;
     if (op === cur) opt.selected = true;
     sel.appendChild(opt);
   });
@@ -1334,9 +1412,9 @@ function renderReqCharts(byVersao, byOperador) {
     });
   }
 
-  // Chart by operador (grouped bar)
+  // Chart by operador (grouped bar) — show name if available
   destroyChart('reqOperador');
-  var oLabels = (byOperador||[]).map(function(r){ return r.operador; });
+  var oLabels = (byOperador||[]).map(function(r){ return r.nome ? r.nome : r.operador; });
   var oSem    = (byOperador||[]).map(function(r){ return r.sem; });
   var oCom    = (byOperador||[]).map(function(r){ return r.com; });
   if (oLabels.length) {
@@ -1359,9 +1437,33 @@ function renderReqCharts(byVersao, byOperador) {
   }
 }
 
+// ── Render per-operator performance table ─────────────────────────────────
+function renderOpePerformanceTable(byOperador) {
+  var tbody = document.getElementById('opePerformTBody');
+  if (!byOperador || !byOperador.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-2">Sem dados</td></tr>';
+    return;
+  }
+  tbody.innerHTML = byOperador.map(function(r) {
+    var perc  = r.perc || 0;
+    var badge = perc >= 70 ? 'sem-verde' : perc >= 30 ? 'sem-amarelo' : 'sem-vermelho';
+    return '<tr>'
+      + '<td class="fw-bold">' + esc(r.operador) + '</td>'
+      + '<td>' + esc(r.nome || '—') + '</td>'
+      + '<td class="text-end text-danger">' + r.sem.toLocaleString('pt-BR') + '</td>'
+      + '<td class="text-end text-success">' + r.com.toLocaleString('pt-BR') + '</td>'
+      + '<td class="text-end">' + (r.total || 0).toLocaleString('pt-BR') + '</td>'
+      + '<td class="text-end fw-bold">' + perc + '%</td>'
+      + '<td><span class="' + badge + '">' + (perc >= 70 ? 'Bom' : perc >= 30 ? 'Regular' : 'Crítico') + '</span></td>'
+      + '</tr>';
+  }).join('');
+}
+
 // ── Render detail table ───────────────────────────────────────────────────
-function renderReqTable(rows) {
-  reqAllRows = rows || [];
+function renderReqTable(rows, opeNames) {
+  reqAllRows = (rows || []).map(function(r) {
+    return Object.assign({}, r, { nomeOpe: r.nomeOpe || (opeNames && opeNames[r.operador.toUpperCase()]) || '' });
+  });
   buildReqTableHtml(reqAllRows, '');
 }
 
@@ -1372,7 +1474,7 @@ function filterReqTable(q) {
 function buildReqTableHtml(rows, q) {
   var tbody = document.getElementById('reqTBody');
   var filtered = q ? rows.filter(function(r){
-    return (r.dtatst+r.versao+r.operador+r.reqBai+r.reqSemRet).toLowerCase().includes(q);
+    return (r.dtatst+r.versao+r.operador+r.nomeOpe+r.reqBai+r.reqSemRet).toLowerCase().includes(q);
   }) : rows;
 
   if (!filtered.length) {
@@ -1381,12 +1483,13 @@ function buildReqTableHtml(rows, q) {
   }
 
   tbody.innerHTML = filtered.map(function(r){
-    var retClss = r.retorno === 'Sim' ? 'sem-verde' : 'sem-vermelho';
-    var rowCls  = r.semRetorno > 0 && r.retorno !== 'Sim' ? 'sem-caminho-row' : '';
+    var retClss  = r.retorno === 'Sim' ? 'sem-verde' : 'sem-vermelho';
+    var rowCls   = r.semRetorno > 0 && r.retorno !== 'Sim' ? 'sem-caminho-row' : '';
+    var opeLabel = r.nomeOpe ? esc(r.operador) + '<br><small class="text-muted">' + esc(r.nomeOpe) + '</small>' : esc(r.operador);
     return '<tr class="'+rowCls+'">'
       + '<td>'+esc(r.dtatst)+'</td>'
       + '<td>'+esc(r.versao)+'</td>'
-      + '<td>'+esc(r.operador)+'</td>'
+      + '<td>'+opeLabel+'</td>'
       + '<td class="text-end fw-bold text-danger">'+r.semRetorno.toLocaleString('pt-BR')+'</td>'
       + '<td class="text-end fw-bold text-success">'+r.comRetorno.toLocaleString('pt-BR')+'</td>'
       + '<td class="text-end">'+r.total.toLocaleString('pt-BR')+'</td>'
@@ -1401,6 +1504,192 @@ function buildReqTableHtml(rows, q) {
 document.addEventListener('shown.bs.tab', function(e) {
   if (e.target.getAttribute('data-bs-target') === '#tabReq') {
     loadReqDashboard();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Cadastro Operadores tab
+// ═══════════════════════════════════════════════════════════════════════════
+var cadOpePendingJson = null;
+var cadOpeAllRows     = [];
+
+function validateCadOpeJson() {
+  var raw = (document.getElementById('cadOpeJsonInput').value || '').trim();
+  if (!raw) { showSystemMsg('warning', 'Cole o JSON antes de validar.'); return; }
+
+  var data;
+  try { data = JSON.parse(raw); } catch(e) {
+    showSystemMsg('danger', 'JSON inválido: ' + e.message); return;
+  }
+  if (!Array.isArray(data)) data = [data];
+
+  var errors = [];
+  var valid  = [];
+  data.forEach(function(item, idx) {
+    if (!item.OPE_LOGOPE) { errors.push('Linha ' + (idx+1) + ': OPE_LOGOPE ausente'); return; }
+    valid.push(item);
+  });
+
+  var errEl  = document.getElementById('cadOpeValidErrors');
+  var infoEl = document.getElementById('cadOpeValidInfo');
+  if (errors.length) {
+    errEl.textContent = errors.slice(0,5).join(' | ');
+    errEl.classList.remove('d-none');
+    infoEl.classList.add('d-none');
+    document.getElementById('btnConfirmSaveCadOpe').disabled = true;
+  } else {
+    errEl.classList.add('d-none');
+    infoEl.textContent = '✅ ' + valid.length + ' operador(es) válido(s). Confirme para salvar.';
+    infoEl.classList.remove('d-none');
+    document.getElementById('btnConfirmSaveCadOpe').disabled = false;
+  }
+
+  document.getElementById('cadOpePreviewHead').innerHTML = '<tr><th>OPE_LOGOPE</th><th>OPE_DESCRI</th></tr>';
+  document.getElementById('cadOpePreviewBody').innerHTML = data.slice(0, 30).map(function(item) {
+    return '<tr><td>' + esc(item.OPE_LOGOPE || '') + '</td><td>' + esc(item.OPE_DESCRI || '') + '</td></tr>';
+  }).join('');
+
+  cadOpePendingJson = valid.length ? JSON.stringify(data) : null;
+  new bootstrap.Modal(document.getElementById('cadOpeValidModal')).show();
+}
+
+function confirmarSalvarCadOpe() {
+  if (!cadOpePendingJson) return;
+  document.getElementById('btnConfirmSaveCadOpe').disabled = true;
+  document.getElementById('btnConfirmSaveCadOpe').textContent = '⏳ Salvando…';
+  bootstrap.Modal.getInstance(document.getElementById('cadOpeValidModal')).hide();
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      document.getElementById('btnConfirmSaveCadOpe').textContent = '✅ Confirmar e Salvar';
+      if (res.ok) {
+        var st = document.getElementById('cadOpeImportStatus');
+        st.innerHTML = '<span class="text-success fw-bold">✅ ' + res.total + ' operador(es) salvo(s)</span>';
+        document.getElementById('cadOpeJsonInput').value = '';
+        cadOpePendingJson = null;
+        loadCadOpe();
+      } else {
+        showSystemMsg('danger', 'Erro: ' + res.error);
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('btnConfirmSaveCadOpe').textContent = '✅ Confirmar e Salvar';
+      showSystemMsg('danger', 'Falha: ' + err.message);
+    })
+    .saveOperadores(cadOpePendingJson);
+}
+
+function loadCadOpe() {
+  google.script.run
+    .withSuccessHandler(function(resp) {
+      if (!resp.ok) { showSystemMsg('danger', 'Erro: ' + resp.error); return; }
+      cadOpeAllRows = resp.operadores || [];
+      buildCadOpeTableHtml(cadOpeAllRows, '');
+      renderCadOpeCharts(cadOpeAllRows);
+      renderCadOpeSummary(cadOpeAllRows);
+    })
+    .withFailureHandler(function(err) { showSystemMsg('danger', 'Erro ao carregar operadores: ' + err.message); })
+    .getOperadoresMetrics();
+}
+
+function filterCadOpe(q) {
+  buildCadOpeTableHtml(cadOpeAllRows, (q || '').toLowerCase().trim());
+}
+
+function renderCadOpeSummary(rows) {
+  var total     = rows.length;
+  var comDados  = rows.filter(function(r){ return r.registros > 0; }).length;
+  var mediaPerc = total > 0 ? Math.round(rows.reduce(function(s,r){ return s + r.perc; }, 0) / total) : 0;
+  document.getElementById('cadOpeTotalReg').textContent  = total;
+  document.getElementById('cadOpeComDados').textContent  = comDados;
+  document.getElementById('cadOpeMediaPerc').textContent = mediaPerc + '%';
+}
+
+function buildCadOpeTableHtml(rows, q) {
+  var tbody = document.getElementById('cadOpeTBody');
+  var filtered = q ? rows.filter(function(r){
+    return (r.code + r.nome).toLowerCase().includes(q);
+  }) : rows;
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-3">Nenhum operador encontrado</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(function(r) {
+    var perc  = r.perc || 0;
+    var badge = perc >= 70 ? 'sem-verde' : perc >= 30 ? 'sem-amarelo' : 'sem-vermelho';
+    var label = perc >= 70 ? '✅ Bom' : perc >= 30 ? '⚠️ Regular' : '🔴 Crítico';
+    var hasData = r.registros > 0;
+    var progressBar = hasData
+      ? '<div class="progress" style="min-width:80px"><div class="progress-bar bg-success" style="width:' + perc + '%"></div></div>'
+      : '<span class="text-muted small">sem dados</span>';
+    return '<tr>'
+      + '<td class="fw-bold">' + esc(r.code) + '</td>'
+      + '<td>' + esc(r.nome || '—') + '</td>'
+      + '<td class="text-end">' + (hasData ? r.registros : '—') + '</td>'
+      + '<td class="text-end">' + (hasData ? r.dias : '—') + '</td>'
+      + '<td class="text-end' + (hasData && r.sem > 0 ? ' text-danger fw-bold' : '') + '">' + (hasData ? r.sem.toLocaleString('pt-BR') : '—') + '</td>'
+      + '<td class="text-end' + (hasData ? ' text-success' : '') + '">' + (hasData ? r.com.toLocaleString('pt-BR') : '—') + '</td>'
+      + '<td class="text-end">' + (hasData ? r.total.toLocaleString('pt-BR') : '—') + '</td>'
+      + '<td class="text-end">' + (hasData ? r.totalReq.toLocaleString('pt-BR') : '—') + '</td>'
+      + '<td class="text-end fw-bold">' + (hasData ? perc + '%' : '—') + '</td>'
+      + '<td>' + progressBar + '</td>'
+      + '<td>' + (hasData ? '<span class="' + badge + '">' + label + '</span>' : '<span class="sem-cinza">Sem dados</span>') + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function renderCadOpeCharts(rows) {
+  var withData = rows.filter(function(r){ return r.registros > 0; });
+  var sorted   = withData.slice().sort(function(a,b){ return b.perc - a.perc; });
+
+  destroyChart('cadOpePerc');
+  if (sorted.length) {
+    var labels  = sorted.map(function(r){ return r.nome || r.code; });
+    var percArr = sorted.map(function(r){ return r.perc; });
+    var colors  = percArr.map(function(p){ return p >= 70 ? 'rgba(25,135,84,.8)' : p >= 30 ? 'rgba(255,193,7,.8)' : 'rgba(220,53,69,.8)'; });
+
+    charts['cadOpePerc'] = new Chart(document.getElementById('chartCadOpePerc'), {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{ label:'% Com Retorno', data: percArr, backgroundColor: colors }],
+      },
+      options: {
+        responsive: true, indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: { x: { max: 100, beginAtZero: true } },
+      },
+      plugins: [makeLabelPlugin('horizontal', { color:'#212529', fontSize:9, suffix:'%' })],
+    });
+  }
+
+  destroyChart('cadOpeVol');
+  var volSorted = withData.slice().sort(function(a,b){ return (b.sem+b.com)-(a.sem+a.com); }).slice(0, 15);
+  if (volSorted.length) {
+    charts['cadOpeVol'] = new Chart(document.getElementById('chartCadOpeVol'), {
+      type: 'bar',
+      data: {
+        labels: volSorted.map(function(r){ return r.nome || r.code; }),
+        datasets: [
+          { label:'Sem Retorno', data: volSorted.map(function(r){ return r.sem; }), backgroundColor:'rgba(220,53,69,.75)', stack:'s' },
+          { label:'Com Retorno', data: volSorted.map(function(r){ return r.com; }), backgroundColor:'rgba(25,135,84,.75)',  stack:'s' },
+        ],
+      },
+      options: {
+        responsive: true, indexAxis: 'y',
+        plugins: { legend: { position: 'bottom' } },
+        scales: { x: { stacked: true }, y: { stacked: true } },
+      },
+    });
+  }
+}
+
+// ── Tab shown — lazy load ─────────────────────────────────────────────────
+document.addEventListener('shown.bs.tab', function(e) {
+  if (e.target.getAttribute('data-bs-target') === '#tabCadOpe') {
+    loadCadOpe();
   }
 });
 
