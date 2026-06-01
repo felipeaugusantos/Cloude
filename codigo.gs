@@ -1045,3 +1045,190 @@ function getKPITrendData() {
     return { ok: false, error: e.message };
   }
 }
+
+// ─── Req. Retorno — constants ──────────────────────────────────────────────────
+const REQ_HEADER = [
+  "SESSION_ID","IMPORT_TS","ALT_DTATST","ALT_VERDDL","OPE_CONFER",
+  "TOTAL_SEM_RETORNO","TOTAL_COM_RETORNO","TOTAL_COM_E_SEM_RETORNO",
+  "TOTAL_REQ_RETORNO","REQ_BAI_RETORNO","REQUISITOS_BAIXOS_SEMRETORNO","RETORNO_REQUISITOS"
+];
+const REQ_NUMERIC_FIELDS = ["TOTAL_SEM_RETORNO","TOTAL_COM_RETORNO","TOTAL_COM_E_SEM_RETORNO","TOTAL_REQ_RETORNO"];
+const REQ_SESSOES_HEADER = ["SESSION_ID","TIMESTAMP","TOTAL_REGISTROS","STATUS","ERRO"];
+
+// ─── Save REQ return data from JSON import ────────────────────────────────────
+function saveReqData(jsonString) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss        = getSpreadsheet_();
+    const tz        = ss.getSpreadsheetTimeZone();
+    const ts        = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
+    const sessionId = Utilities.getUuid();
+
+    const sheetReq  = ensureSheet_(ss, "REQ_Historico", REQ_HEADER);
+    const sheetSess = ensureSheet_(ss, "REQ_Sessoes",   REQ_SESSOES_HEADER);
+
+    let data;
+    try { data = JSON.parse(jsonString); } catch(e) {
+      sheetSess.appendRow([sessionId, ts, 0, "ERRO", "JSON inválido: " + e.message]);
+      return { ok: false, error: "JSON inválido: " + e.message };
+    }
+    if (!Array.isArray(data)) data = [data];
+
+    const REQUIRED = ["ALT_DTATST","ALT_VERDDL","OPE_CONFER"];
+    const errors   = [];
+    const rows     = [];
+
+    data.forEach(function(item, idx) {
+      const missing = REQUIRED.filter(function(f) {
+        return item[f] === undefined || item[f] === null || String(item[f]).trim() === "";
+      });
+      if (missing.length) {
+        errors.push("Linha " + (idx+1) + ": campo(s) obrigatório(s) ausente(s): " + missing.join(", "));
+        return;
+      }
+      rows.push([
+        sessionId,
+        ts,
+        String(item.ALT_DTATST   || ""),
+        String(item.ALT_VERDDL   || ""),
+        String(item.OPE_CONFER   || ""),
+        isValidNumberValue(item.TOTAL_SEM_RETORNO)       ? Number(item.TOTAL_SEM_RETORNO)       : 0,
+        isValidNumberValue(item.TOTAL_COM_RETORNO)       ? Number(item.TOTAL_COM_RETORNO)       : 0,
+        isValidNumberValue(item.TOTAL_COM_E_SEM_RETORNO) ? Number(item.TOTAL_COM_E_SEM_RETORNO) : 0,
+        isValidNumberValue(item.TOTAL_REQ_RETORNO)       ? Number(item.TOTAL_REQ_RETORNO)       : 0,
+        String(item.REQ_BAI_RETORNO              || "0"),
+        String(item.REQUISITOS_BAIXOS_SEMRETORNO || ""),
+        String(item.RETORNO_REQUISITOS           || "Não"),
+      ]);
+    });
+
+    if (errors.length) {
+      sheetSess.appendRow([sessionId, ts, 0, "ERRO", errors.slice(0,3).join(" | ")]);
+      return { ok: false, error: errors.join("\n") };
+    }
+
+    if (rows.length) {
+      sheetReq.getRange(sheetReq.getLastRow()+1, 1, rows.length, REQ_HEADER.length).setValues(rows);
+    }
+    sheetSess.appendRow([sessionId, ts, rows.length, "OK", ""]);
+    logEvent_("INFO", "REQ", "saveReqData", "Importação concluída", rows.length + " registros");
+    return { ok: true, sessionId: sessionId, total: rows.length };
+  } catch(e) {
+    logEvent_("ERROR", "REQ", "saveReqData", "Erro ao salvar", e.message);
+    return { ok: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ─── Get REQ dashboard data with optional filters ─────────────────────────────
+function getReqDashboard(filtersJson) {
+  try {
+    var filters = filtersJson ? JSON.parse(filtersJson) : {};
+    var ss      = getSpreadsheet_();
+    var tz      = ss.getSpreadsheetTimeZone();
+    var EMPTY   = { ok:true, sessions:[], cards:{total:0,semRetorno:0,comRetorno:0,totalCopias:0,percCom:0}, byVersao:[], byOperador:[], versaoList:[], operadorList:[], rows:[] };
+
+    // Load sessions
+    var sheetSess = ensureSheet_(ss, "REQ_Sessoes", REQ_SESSOES_HEADER);
+    var sessData  = sheetSess.getDataRange().getValues();
+    var sessions  = [];
+    if (sessData.length > 1) {
+      for (var i = sessData.length - 1; i >= 1; i--) {
+        var r = sessData[i];
+        var ts = r[1] instanceof Date ? Utilities.formatDate(r[1], tz, "yyyy-MM-dd HH:mm:ss") : String(r[1]||"");
+        sessions.push({ id: String(r[0]||""), ts: ts, total: Number(r[2]||0), status: String(r[3]||""), erro: String(r[4]||"") });
+      }
+    }
+
+    // Load historico
+    var sheetReq = ensureSheet_(ss, "REQ_Historico", REQ_HEADER);
+    var rawData  = sheetReq.getDataRange().getValues();
+    if (rawData.length <= 1) { EMPTY.sessions = sessions; return EMPTY; }
+
+    var hdr = rawData[0].map(function(h){ return String(h).trim().toUpperCase(); });
+    var ci  = {};
+    REQ_HEADER.forEach(function(col, idx) { ci[col] = hdr.indexOf(col); if (ci[col]<0) ci[col]=idx; });
+
+    var sessionFilter = filters.sessionId || null;
+    var items = [];
+
+    for (var i = 1; i < rawData.length; i++) {
+      var r       = rawData[i];
+      var sid     = String(r[ci["SESSION_ID"]]||"");
+      if (sessionFilter && sid !== sessionFilter) continue;
+
+      var dtatst  = r[ci["ALT_DTATST"]] instanceof Date
+        ? Utilities.formatDate(r[ci["ALT_DTATST"]], tz, "yyyy-MM-dd")
+        : String(r[ci["ALT_DTATST"]]||"").trim();
+
+      if (filters.dataInicio && dtatst && dtatst < filters.dataInicio) continue;
+      if (filters.dataFim    && dtatst && dtatst > filters.dataFim)    continue;
+
+      var versao   = String(r[ci["ALT_VERDDL"]]||"").trim();
+      var operador = String(r[ci["OPE_CONFER"]]||"").trim();
+      var retorno  = String(r[ci["RETORNO_REQUISITOS"]]||"").trim();
+
+      if (filters.versao   && !versao.toLowerCase().includes(filters.versao.toLowerCase()))  continue;
+      if (filters.operador && operador.toLowerCase() !== filters.operador.toLowerCase())     continue;
+      if (filters.retorno  && retorno !== filters.retorno)                                   continue;
+
+      items.push({
+        sessionId:  sid,
+        dtatst:     dtatst,
+        versao:     versao,
+        operador:   operador,
+        semRetorno: Number(r[ci["TOTAL_SEM_RETORNO"]]||0),
+        comRetorno: Number(r[ci["TOTAL_COM_RETORNO"]]||0),
+        total:      Number(r[ci["TOTAL_COM_E_SEM_RETORNO"]]||0),
+        totalReq:   Number(r[ci["TOTAL_REQ_RETORNO"]]||0),
+        reqBai:     String(r[ci["REQ_BAI_RETORNO"]]||"0"),
+        reqSemRet:  String(r[ci["REQUISITOS_BAIXOS_SEMRETORNO"]]||""),
+        retorno:    retorno,
+      });
+    }
+
+    // Summary cards
+    var totalReg    = items.length;
+    var semRetorno  = items.reduce(function(s,r){ return s+r.semRetorno; }, 0);
+    var comRetorno  = items.reduce(function(s,r){ return s+r.comRetorno; }, 0);
+    var totalCopias = items.reduce(function(s,r){ return s+r.total;      }, 0);
+    var percCom     = totalCopias > 0 ? Math.round(comRetorno*100/totalCopias) : 0;
+
+    // By versao
+    var versaoMap = {};
+    items.forEach(function(r) {
+      if (!versaoMap[r.versao]) versaoMap[r.versao] = { versao:r.versao, sem:0, com:0 };
+      versaoMap[r.versao].sem += r.semRetorno;
+      versaoMap[r.versao].com += r.comRetorno;
+    });
+    var byVersao = Object.values(versaoMap).sort(function(a,b){ return (b.sem+b.com)-(a.sem+a.com); });
+
+    // By operador
+    var opMap = {};
+    items.forEach(function(r) {
+      if (!opMap[r.operador]) opMap[r.operador] = { operador:r.operador, sem:0, com:0 };
+      opMap[r.operador].sem += r.semRetorno;
+      opMap[r.operador].com += r.comRetorno;
+    });
+    var byOperador = Object.values(opMap).sort(function(a,b){ return (b.sem+b.com)-(a.sem+a.com); });
+
+    var versaoList   = [...new Set(items.map(function(r){ return r.versao;   }).filter(Boolean))].sort();
+    var operadorList = [...new Set(items.map(function(r){ return r.operador; }).filter(Boolean))].sort();
+
+    return {
+      ok:           true,
+      sessions:     sessions,
+      cards:        { total:totalReg, semRetorno:semRetorno, comRetorno:comRetorno, totalCopias:totalCopias, percCom:percCom },
+      byVersao:     byVersao,
+      byOperador:   byOperador,
+      versaoList:   versaoList,
+      operadorList: operadorList,
+      rows:         items,
+    };
+  } catch(e) {
+    logEvent_("ERROR", "REQ", "getReqDashboard", "Erro ao carregar dashboard", e.message);
+    return { ok: false, error: e.message };
+  }
+}

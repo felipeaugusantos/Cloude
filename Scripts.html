@@ -1146,6 +1146,264 @@ function clearRelFilters() {
   applyRelFilter();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// REQ. RETORNO tab
+// ═══════════════════════════════════════════════════════════════════════════
+var reqPendingJson = null;  // holds validated JSON array before confirming save
+var reqAllRows     = [];    // current rendered table rows (for quick filter)
+
+// ── Validate JSON and show preview modal ──────────────────────────────────
+function validateReqJson() {
+  var raw = (document.getElementById('reqJsonInput').value || '').trim();
+  if (!raw) { showSystemMsg('warning', 'Cole o JSON antes de validar.'); return; }
+
+  var data;
+  try { data = JSON.parse(raw); } catch(e) {
+    showSystemMsg('danger', 'JSON inválido: ' + e.message);
+    return;
+  }
+  if (!Array.isArray(data)) data = [data];
+
+  var COLS = ['ALT_DTATST','ALT_VERDDL','OPE_CONFER','TOTAL_SEM_RETORNO','TOTAL_COM_RETORNO',
+              'TOTAL_COM_E_SEM_RETORNO','TOTAL_REQ_RETORNO','REQ_BAI_RETORNO',
+              'REQUISITOS_BAIXOS_SEMRETORNO','RETORNO_REQUISITOS'];
+  var REQUIRED = ['ALT_DTATST','ALT_VERDDL','OPE_CONFER'];
+
+  var errors  = [];
+  var validRows = [];
+  data.forEach(function(item, idx) {
+    var miss = REQUIRED.filter(function(f){ return !item[f] && item[f] !== 0; });
+    if (miss.length) { errors.push('Linha '+(idx+1)+': '+miss.join(', ')+' ausente(s)'); return; }
+    validRows.push(item);
+  });
+
+  var errEl  = document.getElementById('reqValidErrors');
+  var infoEl = document.getElementById('reqValidInfo');
+  if (errors.length) {
+    errEl.textContent  = errors.slice(0,5).join(' | ') + (errors.length>5?' (…mais '+( errors.length-5)+')':'');
+    errEl.classList.remove('d-none');
+    infoEl.classList.add('d-none');
+    document.getElementById('btnConfirmSaveReq').disabled = true;
+  } else {
+    errEl.classList.add('d-none');
+    infoEl.textContent = '✅ ' + validRows.length + ' registro(s) válido(s). Confirme para salvar.';
+    infoEl.classList.remove('d-none');
+    document.getElementById('btnConfirmSaveReq').disabled = false;
+  }
+
+  // Build preview table
+  var head = document.getElementById('reqPreviewHead');
+  var body = document.getElementById('reqPreviewBody');
+  head.innerHTML = '<tr>' + COLS.map(function(c){ return '<th>'+c+'</th>'; }).join('') + '</tr>';
+  body.innerHTML = data.slice(0,50).map(function(item){
+    return '<tr>' + COLS.map(function(c){
+      var v = item[c] === undefined ? '' : item[c];
+      return '<td>' + esc(v) + '</td>';
+    }).join('') + '</tr>';
+  }).join('');
+
+  reqPendingJson = validRows.length ? JSON.stringify(data) : null;
+  new bootstrap.Modal(document.getElementById('reqValidModal')).show();
+}
+
+// ── Confirm and save to backend ───────────────────────────────────────────
+function confirmarSalvarReq() {
+  if (!reqPendingJson) return;
+  document.getElementById('btnConfirmSaveReq').disabled = true;
+  document.getElementById('btnConfirmSaveReq').textContent = '⏳ Salvando…';
+  bootstrap.Modal.getInstance(document.getElementById('reqValidModal')).hide();
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      document.getElementById('btnConfirmSaveReq').textContent = '✅ Confirmar e Salvar';
+      if (res.ok) {
+        showSystemMsg('success', '✅ ' + res.total + ' registro(s) importado(s) com sucesso.');
+        document.getElementById('reqJsonInput').value = '';
+        reqPendingJson = null;
+        loadReqDashboard();
+      } else {
+        showSystemMsg('danger', 'Erro ao salvar: ' + res.error);
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('btnConfirmSaveReq').textContent = '✅ Confirmar e Salvar';
+      showSystemMsg('danger', 'Falha na comunicação: ' + err.message);
+    })
+    .saveReqData(reqPendingJson);
+}
+
+// ── Load dashboard (no session filter) ───────────────────────────────────
+function loadReqDashboard(sessionId) {
+  var filters = buildReqFilters();
+  if (sessionId) filters.sessionId = sessionId;
+  google.script.run
+    .withSuccessHandler(function(resp) {
+      if (!resp.ok) { showSystemMsg('danger', 'Erro: ' + resp.error); return; }
+      renderReqSessions(resp.sessions, sessionId || null);
+      renderReqCards(resp.cards);
+      renderReqCharts(resp.byVersao, resp.byOperador);
+      renderReqTable(resp.rows);
+      populateReqOperadorSelect(resp.operadorList);
+    })
+    .withFailureHandler(function(err){ showSystemMsg('danger', 'Erro ao carregar Req. Retorno: ' + err.message); })
+    .getReqDashboard(JSON.stringify(filters));
+}
+
+// ── Build filter object from UI ───────────────────────────────────────────
+function buildReqFilters() {
+  return {
+    dataInicio: document.getElementById('rqFDe').value       || '',
+    dataFim:    document.getElementById('rqFAte').value      || '',
+    versao:     document.getElementById('rqFVersao').value   || '',
+    operador:   document.getElementById('rqFOperador').value || '',
+    retorno:    document.getElementById('rqFRetorno').value  || '',
+  };
+}
+
+function applyReqFilter() { loadReqDashboard(); }
+
+function clearReqFilters() {
+  ['rqFDe','rqFAte','rqFVersao'].forEach(function(id){ document.getElementById(id).value = ''; });
+  ['rqFOperador','rqFRetorno'].forEach(function(id){ document.getElementById(id).selectedIndex = 0; });
+  loadReqDashboard();
+}
+
+// ── Populate operador dropdown (preserve current selection) ───────────────
+function populateReqOperadorSelect(list) {
+  var sel = document.getElementById('rqFOperador');
+  var cur = sel.value;
+  sel.innerHTML = '<option value="">Todos</option>';
+  (list||[]).forEach(function(op){
+    var opt = document.createElement('option');
+    opt.value = op; opt.textContent = op;
+    if (op === cur) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+// ── Render session list ───────────────────────────────────────────────────
+function renderReqSessions(sessions, activeId) {
+  var el = document.getElementById('reqSessionList');
+  if (!sessions || !sessions.length) {
+    el.innerHTML = '<div class="text-muted small text-center py-3">Nenhuma sessão ainda</div>';
+    return;
+  }
+  el.innerHTML = sessions.map(function(s){
+    var isActive = s.id === activeId;
+    var badge    = s.status === 'OK'
+      ? '<span class="badge bg-success">' + s.total + ' reg</span>'
+      : '<span class="badge bg-danger">Erro</span>';
+    return '<div class="session-item' + (isActive?' active':'') + '" onclick="loadReqDashboard(\''+esc(s.id)+'\')" title="'+esc(s.erro||'')+'">'
+      + '<div><div style="font-size:.75rem;font-weight:600">'+esc(s.ts)+'</div>'
+      + '<div class="text-muted" style="font-size:.65rem">'+esc(s.id.substring(0,8))+'…</div></div>'
+      + badge + '</div>';
+  }).join('');
+}
+
+// ── Render summary cards ──────────────────────────────────────────────────
+function renderReqCards(cards) {
+  document.getElementById('reqCTotal').textContent = (cards.total || 0).toLocaleString('pt-BR');
+  document.getElementById('reqCSem').textContent   = (cards.semRetorno || 0).toLocaleString('pt-BR');
+  document.getElementById('reqCCom').textContent   = (cards.comRetorno || 0).toLocaleString('pt-BR');
+  document.getElementById('reqCPerc').textContent  = (cards.percCom || 0) + '%';
+}
+
+// ── Render charts ─────────────────────────────────────────────────────────
+function renderReqCharts(byVersao, byOperador) {
+  // Chart by versao (stacked bar)
+  destroyChart('reqVersao');
+  var vLabels = (byVersao||[]).map(function(r){ return r.versao; });
+  var vSem    = (byVersao||[]).map(function(r){ return r.sem; });
+  var vCom    = (byVersao||[]).map(function(r){ return r.com; });
+  if (vLabels.length) {
+    charts['reqVersao'] = new Chart(document.getElementById('chartReqVersao'), {
+      type: 'bar',
+      data: {
+        labels: vLabels,
+        datasets: [
+          { label:'Sem Retorno', data:vSem, backgroundColor:'rgba(220,53,69,.75)',  stack:'s' },
+          { label:'Com Retorno', data:vCom, backgroundColor:'rgba(25,135,84,.75)',  stack:'s' },
+        ],
+      },
+      options: {
+        responsive:true, indexAxis:'y',
+        plugins:{ legend:{ position:'bottom' } },
+        scales:{ x:{ stacked:true }, y:{ stacked:true } },
+      },
+      plugins: [makeLabelPlugin('horizontal', { color:'#fff', fontSize:9 })],
+    });
+  }
+
+  // Chart by operador (grouped bar)
+  destroyChart('reqOperador');
+  var oLabels = (byOperador||[]).map(function(r){ return r.operador; });
+  var oSem    = (byOperador||[]).map(function(r){ return r.sem; });
+  var oCom    = (byOperador||[]).map(function(r){ return r.com; });
+  if (oLabels.length) {
+    charts['reqOperador'] = new Chart(document.getElementById('chartReqOperador'), {
+      type: 'bar',
+      data: {
+        labels: oLabels,
+        datasets: [
+          { label:'Sem Retorno', data:oSem, backgroundColor:'rgba(220,53,69,.75)' },
+          { label:'Com Retorno', data:oCom, backgroundColor:'rgba(25,135,84,.75)' },
+        ],
+      },
+      options: {
+        responsive:true,
+        plugins:{ legend:{ position:'bottom' } },
+        scales:{ y:{ beginAtZero:true } },
+      },
+      plugins: [makeLabelPlugin('vertical', { color:'#212529', fontSize:9 })],
+    });
+  }
+}
+
+// ── Render detail table ───────────────────────────────────────────────────
+function renderReqTable(rows) {
+  reqAllRows = rows || [];
+  buildReqTableHtml(reqAllRows, '');
+}
+
+function filterReqTable(q) {
+  buildReqTableHtml(reqAllRows, (q||'').toLowerCase().trim());
+}
+
+function buildReqTableHtml(rows, q) {
+  var tbody = document.getElementById('reqTBody');
+  var filtered = q ? rows.filter(function(r){
+    return (r.dtatst+r.versao+r.operador+r.reqBai+r.reqSemRet).toLowerCase().includes(q);
+  }) : rows;
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">Nenhum registro encontrado</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(function(r){
+    var retClss = r.retorno === 'Sim' ? 'sem-verde' : 'sem-vermelho';
+    var rowCls  = r.semRetorno > 0 && r.retorno !== 'Sim' ? 'sem-caminho-row' : '';
+    return '<tr class="'+rowCls+'">'
+      + '<td>'+esc(r.dtatst)+'</td>'
+      + '<td>'+esc(r.versao)+'</td>'
+      + '<td>'+esc(r.operador)+'</td>'
+      + '<td class="text-end fw-bold text-danger">'+r.semRetorno.toLocaleString('pt-BR')+'</td>'
+      + '<td class="text-end fw-bold text-success">'+r.comRetorno.toLocaleString('pt-BR')+'</td>'
+      + '<td class="text-end">'+r.total.toLocaleString('pt-BR')+'</td>'
+      + '<td class="text-end">'+r.totalReq.toLocaleString('pt-BR')+'</td>'
+      + '<td><span class="'+retClss+'">'+esc(r.retorno)+'</span></td>'
+      + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.reqSemRet)+'">'+esc(r.reqSemRet||'—')+'</td>'
+      + '</tr>';
+  }).join('');
+}
+
+// ── Tab shown event — lazy load ───────────────────────────────────────────
+document.addEventListener('shown.bs.tab', function(e) {
+  if (e.target.getAttribute('data-bs-target') === '#tabReq') {
+    loadReqDashboard();
+  }
+});
+
 // ─── KPI version filter ───────────────────────────────────────────────────────
 function applyKpiVersionFilter() {
   const q = document.getElementById('kpiVersionFilter').value.toLowerCase().trim();

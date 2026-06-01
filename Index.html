@@ -100,6 +100,7 @@
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabDash">📊 Dashboard Geral</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabRel">📈 Relatórios Inteligentes</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabKpi" id="kpiTabBtn">🎯 KPI Fechamento</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabReq" id="reqTabBtn">📋 Req. Retorno</button></li>
   </ul>
 
   <div class="tab-content">
@@ -466,6 +467,142 @@
       </div>
     </div><!-- /tabKpi -->
 
+    <!-- ══ TAB REQ. RETORNO ═══════════════════════════════════════════════ -->
+    <div class="tab-pane fade" id="tabReq">
+      <div class="row g-3">
+
+        <!-- Left: import panel -->
+        <div class="col-lg-3">
+          <div class="card chart-card p-3 mb-3">
+            <h6 class="card-title mb-2 fw-bold">📥 Importar JSON</h6>
+            <textarea id="reqJsonInput" class="form-control form-control-sm font-monospace mb-2"
+              rows="8" placeholder='Cole aqui o resultado do SELECT em formato JSON…&#10;&#10;[{"ALT_DTATST":"2026-05-20","ALT_VERDDL":"48.02.30.72","OPE_CONFER":"H75",...}]'></textarea>
+            <div class="d-flex gap-2">
+              <button class="btn btn-primary btn-sm flex-grow-1" onclick="validateReqJson()">🔍 Validar / Preview</button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('reqJsonInput').value=''">🗑</button>
+            </div>
+          </div>
+
+          <div class="card chart-card p-3">
+            <h6 class="card-title mb-2 fw-bold">🕓 Sessões de Importação</h6>
+            <div id="reqSessionList" class="d-flex flex-column gap-1" style="max-height:340px;overflow-y:auto">
+              <div class="text-muted small text-center py-3">Nenhuma sessão ainda</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: dashboard -->
+        <div class="col-lg-9">
+
+          <!-- Cards -->
+          <div class="row g-2 mb-3" id="reqCards">
+            <div class="col-6 col-md-3">
+              <div class="mini-stat" style="background:#0d6efd">
+                <div><div class="num" id="reqCTotal">—</div><div class="lbl">Registros</div></div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="mini-stat" style="background:#dc3545">
+                <div><div class="num" id="reqCSem">—</div><div class="lbl">Sem Retorno</div></div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="mini-stat" style="background:#198754">
+                <div><div class="num" id="reqCCom">—</div><div class="lbl">Com Retorno</div></div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="mini-stat" style="background:#6f42c1">
+                <div><div class="num" id="reqCPerc">—</div><div class="lbl">% Com Retorno</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filters -->
+          <div class="card chart-card p-2 mb-3">
+            <div class="row g-2 align-items-end">
+              <div class="col-sm-2">
+                <label class="form-label form-label-sm mb-1">De</label>
+                <input type="date" id="rqFDe" class="form-control form-control-sm">
+              </div>
+              <div class="col-sm-2">
+                <label class="form-label form-label-sm mb-1">Até</label>
+                <input type="date" id="rqFAte" class="form-control form-control-sm">
+              </div>
+              <div class="col-sm-3">
+                <label class="form-label form-label-sm mb-1">Versão</label>
+                <input type="text" id="rqFVersao" class="form-control form-control-sm" placeholder="Ex: 48.02">
+              </div>
+              <div class="col-sm-2">
+                <label class="form-label form-label-sm mb-1">Operador</label>
+                <select id="rqFOperador" class="form-select form-select-sm">
+                  <option value="">Todos</option>
+                </select>
+              </div>
+              <div class="col-sm-2">
+                <label class="form-label form-label-sm mb-1">Retorno</label>
+                <select id="rqFRetorno" class="form-select form-select-sm">
+                  <option value="">Todos</option>
+                  <option value="Sim">Sim</option>
+                  <option value="Não">Não</option>
+                </select>
+              </div>
+              <div class="col-sm-auto">
+                <button class="btn btn-primary btn-sm" onclick="applyReqFilter()">🔍</button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="clearReqFilters()">✖</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts -->
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <div class="card chart-card p-3">
+                <h6 class="card-title text-muted mb-2">Por Versão — Sem vs Com Retorno</h6>
+                <canvas id="chartReqVersao" height="180"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card chart-card p-3">
+                <h6 class="card-title text-muted mb-2">Por Operador — Sem vs Com Retorno</h6>
+                <canvas id="chartReqOperador" height="180"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Table -->
+          <div class="card chart-card p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="card-title text-muted mb-0">Registros Detalhados</h6>
+              <input type="text" id="reqQuickFilter" class="form-control form-control-sm" style="max-width:200px"
+                placeholder="Filtrar tabela…" oninput="filterReqTable(this.value)">
+            </div>
+            <div class="table-container">
+              <table class="table table-sm table-hover mb-0" id="reqTable">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Versão</th>
+                    <th>Operador</th>
+                    <th class="text-end">Sem Ret.</th>
+                    <th class="text-end">Com Ret.</th>
+                    <th class="text-end">Total</th>
+                    <th class="text-end">Qtd Req</th>
+                    <th>Retorno</th>
+                    <th>Req Sem Retorno</th>
+                  </tr>
+                </thead>
+                <tbody id="reqTBody">
+                  <tr><td colspan="9" class="text-center text-muted py-3">Nenhum dado — importe um JSON ou selecione uma sessão</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div><!-- /col-lg-9 -->
+      </div><!-- /row -->
+    </div><!-- /tabReq -->
+
   </div><!-- /tab-content -->
 </div><!-- /container -->
 
@@ -485,6 +622,32 @@
         <span id="chatReportDate" class="text-muted small me-auto"></span>
         <button class="btn btn-success btn-sm" onclick="copiarRelatorioChat()">📋 Copiar</button>
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── REQ JSON Validation Modal ───────────────────────────────────────────── -->
+<div class="modal fade" id="reqValidModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">📋 Validação do JSON — Req. Retorno</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="reqValidErrors" class="alert alert-danger d-none"></div>
+        <div id="reqValidInfo"   class="alert alert-success d-none"></div>
+        <div class="table-responsive" style="max-height:400px;overflow-y:auto">
+          <table class="table table-sm table-bordered" id="reqPreviewTable">
+            <thead class="table-dark" id="reqPreviewHead"></thead>
+            <tbody id="reqPreviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-success" id="btnConfirmSaveReq" onclick="confirmarSalvarReq()">✅ Confirmar e Salvar</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
       </div>
     </div>
   </div>
