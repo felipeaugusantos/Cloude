@@ -1058,8 +1058,11 @@ const REQ_SESSOES_HEADER = ["SESSION_ID","TIMESTAMP","TOTAL_REGISTROS","STATUS",
 // ─── Save REQ return data from JSON import ────────────────────────────────────
 function saveReqData(jsonString) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  let locked = false;
   try {
+    assertAuthorized_("saveReqData");
+    lock.waitLock(30000);
+    locked = true;
     const ss        = getSpreadsheet_();
     const tz        = ss.getSpreadsheetTimeZone();
     const ts        = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
@@ -1074,6 +1077,7 @@ function saveReqData(jsonString) {
       return { ok: false, error: "JSON inválido: " + e.message };
     }
     if (!Array.isArray(data)) data = [data];
+    if (!data.length) return { ok: false, error: "JSON vazio" };
 
     // Normalize all keys to UPPERCASE so lowercase/mixed-case DB exports work
     data = data.map(function(item) {
@@ -1092,6 +1096,13 @@ function saveReqData(jsonString) {
       });
       if (missing.length) {
         errors.push("Linha " + (idx+1) + ": campo(s) obrigatório(s) ausente(s): " + missing.join(", "));
+        return;
+      }
+      const invalidNum = REQ_NUMERIC_FIELDS.filter(function(f) {
+        return !isValidNumberValue(item[f]);
+      });
+      if (invalidNum.length) {
+        errors.push("Linha " + (idx+1) + ": valor inválido em: " + invalidNum.join(", "));
         return;
       }
       rows.push([
@@ -1125,13 +1136,16 @@ function saveReqData(jsonString) {
     logEvent_("ERROR", "REQ", "saveReqData", "Erro ao salvar", e.message);
     return { ok: false, error: e.message };
   } finally {
-    lock.releaseLock();
+    if (locked) {
+      try { lock.releaseLock(); } catch(e) {}
+    }
   }
 }
 
 // ─── Get REQ dashboard data with optional filters ─────────────────────────────
 function getReqDashboard(filtersJson) {
   try {
+    assertAuthorized_("getReqDashboard");
     var filters = filtersJson ? JSON.parse(filtersJson) : {};
     var ss      = getSpreadsheet_();
     var tz      = ss.getSpreadsheetTimeZone();
@@ -1279,8 +1293,11 @@ const TESTES_SESSOES_HEADER  = ["SESSION_ID","TIMESTAMP","TOTAL_REGISTROS","STAT
 
 function saveTestes(jsonString) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  let locked = false;
   try {
+    assertAuthorized_("saveTestes");
+    lock.waitLock(30000);
+    locked = true;
     const ss        = getSpreadsheet_();
     const tz        = ss.getSpreadsheetTimeZone();
     const ts        = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
@@ -1295,6 +1312,7 @@ function saveTestes(jsonString) {
       return { ok: false, error: "JSON inválido: " + e.message };
     }
     if (!Array.isArray(data)) data = [data];
+    if (!data.length) return { ok: false, error: "JSON vazio" };
 
     // Normalize keys to UPPERCASE
     data = data.map(function(item) {
@@ -1313,6 +1331,13 @@ function saveTestes(jsonString) {
       });
       if (missing.length) {
         errors.push("Linha " + (idx+1) + ": " + missing.join(", ") + " ausente(s)");
+        return;
+      }
+      const invalidNum = TESTES_NUMERIC_FIELDS.filter(function(f) {
+        return !isValidNumberValue(item[f]);
+      });
+      if (invalidNum.length) {
+        errors.push("Linha " + (idx+1) + ": valor inválido em: " + invalidNum.join(", "));
         return;
       }
       rows.push([
@@ -1344,12 +1369,15 @@ function saveTestes(jsonString) {
     logEvent_("ERROR", "TESTES", "saveTestes", "Erro ao salvar", e.message);
     return { ok: false, error: e.message };
   } finally {
-    lock.releaseLock();
+    if (locked) {
+      try { lock.releaseLock(); } catch(e) {}
+    }
   }
 }
 
 function getTestesDashboard(filtersJson) {
   try {
+    assertAuthorized_("getTestesDashboard");
     var filters = filtersJson ? JSON.parse(filtersJson) : {};
     var ss      = getSpreadsheet_();
     var tz      = ss.getSpreadsheetTimeZone();
@@ -1464,8 +1492,11 @@ const OPE_HEADER = ["OPE_LOGOPE", "OPE_DESCRI", "IMPORT_TS"];
 
 function saveOperadores(jsonString) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  let locked = false;
   try {
+    assertAuthorized_("saveOperadores");
+    lock.waitLock(30000);
+    locked = true;
     const ss = getSpreadsheet_();
     const tz = ss.getSpreadsheetTimeZone();
     const ts = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
@@ -1475,16 +1506,24 @@ function saveOperadores(jsonString) {
       return { ok: false, error: "JSON inválido: " + e.message };
     }
     if (!Array.isArray(data)) data = [data];
+    if (!data.length) return { ok: false, error: "JSON vazio: o cadastro atual não foi alterado" };
 
     const errors = [];
     const rows   = [];
+    const seenCodes = new Set();
     data.forEach(function(item, idx) {
       // Normalize keys to UPPERCASE so lowercase/mixed-case DB exports work
       const norm = {};
       Object.keys(item).forEach(function(k) { norm[k.toUpperCase()] = item[k]; });
       const code = String(norm.OPE_LOGOPE || "").trim();
       if (!code) { errors.push("Linha " + (idx+1) + ": OPE_LOGOPE ausente"); return; }
-      rows.push([code.toUpperCase(), String(norm.OPE_DESCRI || ""), ts]);
+      const normalizedCode = code.toUpperCase();
+      if (seenCodes.has(normalizedCode)) {
+        errors.push("Linha " + (idx+1) + ": OPE_LOGOPE duplicado: " + normalizedCode);
+        return;
+      }
+      seenCodes.add(normalizedCode);
+      rows.push([normalizedCode, String(norm.OPE_DESCRI || ""), ts]);
     });
 
     if (errors.length) return { ok: false, error: errors.join("\n") };
@@ -1501,12 +1540,15 @@ function saveOperadores(jsonString) {
     logEvent_("ERROR", "OPE", "saveOperadores", "Erro ao salvar operadores", e.message);
     return { ok: false, error: e.message };
   } finally {
-    lock.releaseLock();
+    if (locked) {
+      try { lock.releaseLock(); } catch(e) {}
+    }
   }
 }
 
 function getOperadores() {
   try {
+    assertAuthorized_("getOperadores");
     const ss    = getSpreadsheet_();
     const sheet = ensureSheet_(ss, "Operadores", OPE_HEADER);
     const data  = sheet.getDataRange().getValues();
@@ -1524,6 +1566,7 @@ function getOperadores() {
 
 function getOperadoresMetrics() {
   try {
+    assertAuthorized_("getOperadoresMetrics");
     const ss  = getSpreadsheet_();
     const tz  = ss.getSpreadsheetTimeZone();
 

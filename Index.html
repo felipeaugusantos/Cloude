@@ -81,7 +81,7 @@
 <div class="container-fluid py-3">
 
   <!-- Header -->
-  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+  <div class="dashboard-header d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div>
       <h5 class="mb-0 fw-bold">📦 Sistema de Gestão de Cópias</h5>
       <small class="text-muted">v2026 · atualização automática a cada 5 min</small>
@@ -96,15 +96,16 @@
   <div id="systemMsg" class="mb-2"></div>
 
   <!-- Tabs -->
-  <ul class="nav nav-tabs mb-3" id="mainTabs">
+  <ul class="nav dashboard-tabs mb-3" id="mainTabs">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabDash">📊 Dashboard Geral</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabRel">📈 Relatórios Inteligentes</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabDecision">🎯 Centro de Decisão</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabKpi" id="kpiTabBtn">🎯 KPI Fechamento</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabReq"    id="reqTabBtn">🧪 KPI TESTER</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCadOpe" id="cadOpeTabBtn">👥 Cadastro Operadores</button></li>
   </ul>
 
-  <div class="tab-content">
+  <div class="tab-content dashboard-tab-content">
 
     <!-- ══ TAB DASHBOARD ══════════════════════════════════════════════════ -->
     <div class="tab-pane fade show active" id="tabDash">
@@ -368,6 +369,80 @@
         </div>
       </div>
     </div><!-- /tabRel -->
+
+    <!-- ══ TAB DECISÃO ════════════════════════════════════════════════════ -->
+    <div class="tab-pane fade" id="tabDecision">
+      <div class="card decision-config mb-3">
+        <div class="card-body py-3">
+          <div class="d-flex align-items-end justify-content-between flex-wrap gap-3">
+            <div>
+              <h6 class="mb-1 fw-semibold">Configuração da análise</h6>
+              <small class="text-muted">Clientes ignorados não entram nos cards, recomendações, anomalias e ranking desta aba.</small>
+              <div class="decision-period mt-2" id="decisionPeriodLabel">Período analisado: últimos 30 dias</div>
+            </div>
+            <div class="d-flex gap-2 align-items-end flex-wrap">
+              <div>
+                <label class="form-label form-label-sm mb-1">Período decisório</label>
+                <select id="decisionPeriodSelect" class="form-select form-select-sm" onchange="applyDecisionPeriod()">
+                  <option value="15d">Últimos 15 dias</option>
+                  <option value="30d" selected>Últimos 30 dias</option>
+                  <option value="3m">Últimos 3 meses</option>
+                  <option value="7d">Últimos 7 dias</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label form-label-sm mb-1">Ignorar cliente</label>
+                <select id="decisionIgnoreSelect" class="form-select form-select-sm" style="min-width:240px">
+                  <option value="">Selecione...</option>
+                </select>
+              </div>
+              <button class="btn btn-outline-primary btn-sm" onclick="addIgnoredDecisionClient()">Adicionar</button>
+            </div>
+          </div>
+          <div class="decision-ignore-wrap mt-3">
+            <div id="decisionIgnoredClients" class="decision-chips"></div>
+            <small id="decisionIgnoredMeta" class="text-muted"></small>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-sm-6 col-xl-3"><div class="decision-card p-3">
+          <div class="decision-label">Risco operacional</div><div class="decision-value" id="dRisk">—</div><div class="decision-foot" id="dRiskScore">Score —</div>
+        </div></div>
+        <div class="col-sm-6 col-xl-3"><div class="decision-card p-3">
+          <div class="decision-label">Cliente prioritário</div><div class="decision-value text-truncate" id="dTopClient">—</div><div class="decision-foot" id="dTopClientMeta">—</div>
+        </div></div>
+        <div class="col-sm-6 col-xl-3"><div class="decision-card p-3">
+          <div class="decision-label">Versão crítica</div><div class="decision-value text-truncate" id="dTopVersion">—</div><div class="decision-foot" id="dTopVersionMeta">—</div>
+        </div></div>
+        <div class="col-sm-6 col-xl-3"><div class="decision-card p-3">
+          <div class="decision-label">Confiabilidade da base</div><div class="decision-value" id="dQuality">—%</div><div class="decision-foot" id="dQualityMeta">—</div>
+        </div></div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-lg-5"><div class="card decision-panel p-3 h-100">
+          <h6 class="card-title text-muted mb-3">Recomendações do Sistema</h6><div id="decisionRecs" class="decision-list"></div>
+        </div></div>
+        <div class="col-lg-7"><div class="card decision-panel p-3 h-100">
+          <h6 class="card-title text-muted mb-3">Clientes por Impacto</h6>
+          <div class="table-responsive"><table class="table table-sm align-middle mb-0 decision-table">
+            <thead><tr><th>Cliente</th><th>Total</th><th>%</th><th>Sem caminho</th><th>Rev.</th><th>Status</th></tr></thead>
+            <tbody id="decisionClientRows"></tbody>
+          </table></div>
+        </div></div>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-lg-6"><div class="card decision-panel p-3 h-100">
+          <h6 class="card-title text-muted mb-3">Anomalias Detectadas</h6><div id="decisionAnomalies" class="decision-list"></div>
+        </div></div>
+        <div class="col-lg-6"><div class="card decision-panel p-3 h-100">
+          <h6 class="card-title text-muted mb-3">Saúde da Base</h6><div id="decisionHealth" class="health-grid"></div>
+        </div></div>
+      </div>
+    </div><!-- /tabDecision -->
 
     <!-- ══ TAB KPI ════════════════════════════════════════════════════════ -->
     <div class="tab-pane fade" id="tabKpi">
