@@ -270,10 +270,13 @@ function renderIgnoredDecisionClients(d) {
     wrap.innerHTML = '<span class="text-muted small">Nenhum cliente ignorado.</span>';
   } else {
     wrap.innerHTML = ignoredDecisionClients.map(cli =>
-      '<button class="decision-chip" onclick="removeIgnoredDecisionClient(' + JSON.stringify(cli).replace(/"/g, '&quot;') + ')">' +
+      '<button class="decision-chip" data-cliente="' + esc(cli) + '">' +
         esc(cli) + '<span>×</span>' +
       '</button>'
     ).join('');
+    wrap.querySelectorAll('.decision-chip').forEach(btn => {
+      btn.addEventListener('click', () => removeIgnoredDecisionClient(btn.getAttribute('data-cliente')));
+    });
   }
   meta.textContent = (d.ignoredCount || 0) + ' registro(s) fora da análise decisória.';
 }

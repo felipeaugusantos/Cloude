@@ -118,35 +118,6 @@ tr.sem-caminho-row:hover td{background:#ffd0d0 !important}
 .trend-down{color:#dc3545}
 .trend-eq{color:#6c757d}
 
-/* KPI Tester BI overview */
-.bi-header{
-  display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;
-  padding:.35rem .15rem
-}
-.bi-filter-bar{display:flex;align-items:end;justify-content:flex-end;gap:.55rem;flex-wrap:wrap}
-.bi-filter-bar label{display:flex;flex-direction:column;gap:.18rem;color:#667085;font-size:.72rem;font-weight:700}
-.bi-filter-bar input,.bi-filter-bar select{min-width:132px}
-.bi-kpi-card{
-  height:100%;min-height:112px;padding:1rem 1.1rem;background:#fff;border:1px solid #e7edf5;
-  border-radius:10px;box-shadow:var(--dash-shadow-sm);display:flex;flex-direction:column;justify-content:space-between
-}
-.bi-kpi-card span{color:#8a98a8;font-size:.77rem;font-weight:650;text-transform:uppercase;letter-spacing:.03em}
-.bi-kpi-card strong{color:#0f172a;font-size:2rem;line-height:1;font-weight:800}
-.bi-panel{
-  height:100%;min-height:245px;padding:1rem;background:#fff;border:1px solid #e7edf5;
-  border-radius:10px;box-shadow:var(--dash-shadow-sm);overflow:hidden
-}
-.bi-panel h6{color:#8a98a8;font-size:.82rem;font-weight:700;margin-bottom:.8rem}
-
-/* Keep the KPI Tester dashboard inside its tab instead of widening the page. */
-#tabReq,#tabReq .tab-content,#tabReq .tab-pane,
-#tabReq .row>[class*="col-"],#tabReq .chart-card,#tabReq .bi-panel{min-width:0;max-width:100%}
-#tabReq canvas{display:block;width:100%!important;max-width:100%!important}
-#tabReq .table-container,#tabReq .table-responsive{max-width:100%;overflow:auto}
-#mgChartMonthly,#mgChartVariation{height:220px!important}
-#mgChartCells,#mgChartOperators{height:320px!important}
-#mgChartWeekday,#mgChartVersions{height:260px!important}
-
 /* Decision center */
 .decision-config{
   border:1px solid var(--dash-border);

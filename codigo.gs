@@ -613,8 +613,10 @@ function buildDecision_(items, today, tz, ignoredClients, decisionPeriod) {
   const rawCharts = buildCharts_(decisionItems, today, tz);
   const reports = buildReports_(decisionItems, rawCharts.cliTotalMap, rawCharts.trend30Raw, tz);
 
+  // versionMap e a matriz por cliente abaixo usam decisionItems (já filtrado por período
+  // decisório + clientes ignorados) para manter consistência com o restante da análise.
   const versionMap = {};
-  items.forEach(r => {
+  decisionItems.forEach(r => {
     const key = r.versao || "Sem versão";
     if (!versionMap[key]) versionMap[key] = { total:0, semCaminho:0, revisao:0 };
     versionMap[key].total++;
@@ -625,11 +627,19 @@ function buildDecision_(items, today, tz, ignoredClients, decisionPeriod) {
   const topClientEntry = Object.entries(rawCharts.cliTotalMap || {}).sort((a,b)=>b[1]-a[1])[0] || ["-", 0];
   const topVersionEntry = Object.entries(versionMap).sort((a,b)=>b[1].total-a[1].total)[0] || ["-", { total:0, semCaminho:0, revisao:0 }];
 
+  // Pré-indexa decisionItems por cliente uma única vez (evita varrer o array completo
+  // a cada um dos 8 top clientes).
+  const cliItemsMap = {};
+  decisionItems.forEach(r => {
+    if (!cliItemsMap[r.cliente]) cliItemsMap[r.cliente] = [];
+    cliItemsMap[r.cliente].push(r);
+  });
+
   const topClients = Object.entries(rawCharts.cliTotalMap || {})
     .sort((a,b)=>b[1]-a[1])
     .slice(0, 8)
     .map(([cliente, count]) => {
-      const cliItems = items.filter(r => r.cliente === cliente);
+      const cliItems = cliItemsMap[cliente] || [];
       const cliSemCaminho = cliItems.filter(r => !r.caminho || !r.caminho.trim()).length;
       const cliComRev = cliItems.filter(r => r.revisao && r.revisao.trim()).length;
       const pct = total ? Math.round(count * 100 / total) : 0;
