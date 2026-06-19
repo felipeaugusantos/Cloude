@@ -206,7 +206,7 @@
         <div class="card-header bg-white d-flex align-items-center justify-content-between flex-wrap gap-2">
           <span class="fw-semibold">Registros <span id="tableCount" class="text-muted fw-normal small"></span></span>
           <div class="d-flex gap-2 align-items-center">
-            <input type="text" id="quickFilter" class="form-control form-control-sm" placeholder="Filtro rápido..." oninput="applyQuickFilter()">
+            <input type="text" id="quickFilter" class="form-control form-control-sm" placeholder="Filtrar nesta página..." oninput="applyQuickFilter()" data-bs-toggle="tooltip" data-bs-placement="top" title="Filtra apenas as linhas já carregadas nesta página. Para buscar em todos os registros, use os filtros acima e a paginação.">
             <button class="btn btn-outline-success btn-sm" onclick="exportCSV()">⬇ CSV</button>
           </div>
         </div>

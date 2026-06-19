@@ -100,6 +100,48 @@ function assertAuthorized_(action) {
   throw new Error("Usuário não autorizado");
 }
 
+// Diagnóstico somente leitura de configuração — ajuda a detectar setup incompleto
+// (ALLOWED_USERS/POST_SECRET ausentes, planilha/abas faltando) sem precisar abrir o editor do Apps Script.
+function getConfigDiagnostics() {
+  try {
+    assertAuthorized_("getConfigDiagnostics");
+    const warnings = [];
+
+    const allowedUsersConfigured = getAllowedUsers_().length > 0;
+    if (!allowedUsersConfigured) {
+      warnings.push("ALLOWED_USERS não configurado — o Web App está acessível para qualquer pessoa com o link.");
+    }
+
+    const postSecretConfigured = !!getScriptProp_("POST_SECRET");
+    if (!postSecretConfigured) {
+      warnings.push("POST_SECRET não configurado — a importação via doPost está desabilitada.");
+    }
+
+    let spreadsheetOk = true, missingSheets = [];
+    try {
+      const ss = getSpreadsheet_();
+      [CONFIG.SHEET_GERAL, CONFIG.SHEET_KPI, CONFIG.SHEET_SESSOES, CONFIG.SHEET_LOG].forEach(name => {
+        if (!ss.getSheetByName(name)) missingSheets.push(name);
+      });
+      if (missingSheets.length) {
+        warnings.push("Aba(s) ainda não criada(s) (serão geradas automaticamente quando necessário): " + missingSheets.join(", "));
+      }
+    } catch(e) {
+      spreadsheetOk = false;
+      warnings.push("Planilha não encontrada: " + e.message);
+    }
+
+    if (warnings.length) {
+      logEvent_("WARN", "CONFIG", "getConfigDiagnostics", "Configuração incompleta detectada", warnings.join(" | "));
+    }
+
+    return { ok: true, allowedUsersConfigured, postSecretConfigured, spreadsheetOk, missingSheets, warnings };
+  } catch(e) {
+    logEvent_("ERROR", "CONFIG", "getConfigDiagnostics", "Erro ao diagnosticar configuração", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 function getIgnoredDecisionClients_() {
   try {
     const raw = PropertiesService.getUserProperties().getProperty("IGNORED_DECISION_CLIENTS") || "[]";

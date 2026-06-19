@@ -1,6 +1,6 @@
 # Sistema de Gestao de Copias
 
-Dashboard em Google Apps Script para acompanhar liberacoes de copias, relatorios operacionais, KPI de fechamento, retorno de requisitos, testes de copias e desempenho de operadores.
+Dashboard em Google Apps Script para acompanhar liberacoes de copias, relatorios operacionais e KPI de fechamento.
 
 ## Estrutura
 
@@ -17,11 +17,6 @@ O projeto usa uma planilha Google Sheets com estas abas:
 - `Geral`: base principal de copias.
 - `KPI_Historico`: historico dos KPIs importados.
 - `KPI_Sessoes`: auditoria das importacoes de KPI.
-- `REQ_Historico`: historico das importacoes de retorno de requisitos.
-- `REQ_Sessoes`: auditoria das importacoes de retorno de requisitos.
-- `TESTES_Historico`: historico das importacoes de testes de copias.
-- `TESTES_Sessoes`: auditoria das importacoes de testes de copias.
-- `Operadores`: cadastro substituivel de operadores e nomes.
 - `SYS_LOG`: log tecnico do sistema.
 
 Se as abas auxiliares nao existirem, o script cria quando necessario.
@@ -53,6 +48,10 @@ Exemplo:
 ```text
 ALLOWED_USERS=usuario1@empresa.com,usuario2@empresa.com
 ```
+
+O dashboard chama `getConfigDiagnostics()` ao carregar e exibe um aviso na tela caso `ALLOWED_USERS`,
+`POST_SECRET` ou alguma aba esperada esteja faltando. Use essa funcao tambem manualmente pelo editor do
+Apps Script para verificar a configuracao sem abrir as Propriedades do Script.
 
 ## Publicacao
 
@@ -98,77 +97,4 @@ Envie JSON com este formato:
 - O dashboard usa cache curto para reduzir leituras repetidas da planilha.
 - O ponto de entrada correto do Apps Script e `Index.html`. Nao crie uma variante `index.html`, pois sistemas Windows tratam os dois nomes como o mesmo arquivo.
 - Importacoes vazias sao rejeitadas. Valores numericos invalidos tambem sao rejeitados para evitar indicadores incorretos.
-
-## Importacoes Manuais Adicionais
-
-### Retorno de Requisitos
-
-Cole um array JSON na area `KPI TESTER > Retorno de Requisitos`. Campos obrigatorios:
-
-```json
-[
-  {
-    "ALT_DTATST": "2026-06-01",
-    "ALT_VERDDL": "48.02",
-    "OPE_CONFER": "H75",
-    "TOTAL_SEM_RETORNO": 0,
-    "TOTAL_COM_RETORNO": 1,
-    "TOTAL_COM_E_SEM_RETORNO": 1,
-    "TOTAL_REQ_RETORNO": 1
-  }
-]
-```
-
-### Testes de Copias
-
-Cole um array JSON na area `KPI TESTER > Testes de Copias`. Campos obrigatorios:
-
-```json
-[
-  {
-    "ALT_DTATST": "2026-06-01",
-    "ALT_VERDDL": "48.02",
-    "OPE_CONFER": "H75",
-    "TOTAL": 1,
-    "TOTAL_COM_TESTE": 1,
-    "TOTAL_SEM_TESTE": 0
-  }
-]
-```
-
-### Cadastro de Operadores
-
-Cole um array JSON na aba `Cadastro Operadores`. A importacao substitui o cadastro atual e rejeita listas vazias ou codigos duplicados:
-
-```json
-[
-  {
-    "OPE_LOGOPE": "H75",
-    "OPE_DESCRI": "Nome do operador"
-  }
-]
-```
-
-## Visao Gerencial do KPI Tester
-
-A entrada padrao do `KPI TESTER` e a aba `Visao Gerencial`. Ela combina os snapshots mais recentes de retorno de requisitos e testes de copias para destacar:
-
-- percentual com retorno e percentual com teste
-- pendencias totais, sem retorno e sem teste
-- operadores criticos e operadores com maior volume pendente
-- versoes com maior concentracao de pendencias
-- recomendacoes prioritarias para atuacao operacional
-
-A tela segue uma composicao de BI com filtro de ano e periodo, cards executivos e graficos de:
-
-- evolucao mensal e variacao mes a mes
-- volume por celula e operador
-- medias por dia util
-- requisitos baixados por versao
-
-Os dashboards de retorno e testes usam automaticamente a ultima sessao valida importada. Isso evita somar snapshots historicos e inflar os indicadores. As sessoes anteriores continuam disponiveis na lateral para consulta e auditoria.
-
-As importacoes rejeitam valores negativos e totais inconsistentes:
-
-- retorno: `TOTAL_COM_E_SEM_RETORNO = TOTAL_SEM_RETORNO + TOTAL_COM_RETORNO`
-- testes: `TOTAL = TOTAL_COM_TESTE + TOTAL_SEM_TESTE`
+- O filtro rapido da tabela (`quickFilter`) filtra apenas as linhas ja carregadas na pagina atual, nao o conjunto completo de registros filtrados. Para buscar em todo o conjunto, use os filtros de cliente/data/versao acima da tabela.
