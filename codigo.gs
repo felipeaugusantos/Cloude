@@ -24,6 +24,12 @@ const KPI_NUMERIC_FIELDS = [
   "KPI_ABERTA_ANDAMENTO","KPI_CORRIGINDO_CORRIGIDO","KPI_CONFERIDO"
 ];
 
+const KPI_STATUS_FIELDS    = ["ABERTA","ANDAMENTO","CORRIGINDO","CORRIGIDO","CONFERIDO"];
+const KPI_SEMAFORO_FIELDS  = ["SEMAFORO_ABERTA_ANDAMENTO","SEMAFORO_CORRIGINDO_CORRIGIDO","SEMAFORO_CONFERIDO"];
+const KPI_SEMAFORO_VALUES  = ["VERDE","AMARELO","VERMELHO"];
+const KPI_ALT_VERSAO_MAXLEN = 60;
+const KPI_SEMAFORO_MAXLEN   = 20;
+
 const LOG_HEADER     = ["TIMESTAMP","NIVEL","ORIGEM","FUNCAO","MENSAGEM","DETALHE","USUARIO"];
 const SESSOES_HEADER = ["SESSION_ID","TIMESTAMP","TOTAL_REGISTROS","ORIGEM","STATUS","ERRO","HASH_PAYLOAD"];
 
@@ -171,6 +177,46 @@ function isValidNumberValue(v) {
   if (v === null || v === undefined) return false;
   if (typeof v === "string" && v.trim() === "") return false;
   return Number.isFinite(Number(v));
+}
+
+// Validação de um item de KPI além do mero "campo presente e numérico":
+// rejeita negativos, exige TOTAL == soma dos status, restringe SEMAFORO_* a um
+// conjunto fechado de valores e limita o tamanho de strings. É a fonte final de
+// verdade — a validação espelhada no front-end (Scripts.html) é só feedback antecipado.
+function validateKpiItemBusinessRules_(item, idx, label) {
+  const errors = [];
+
+  const negativos = KPI_NUMERIC_FIELDS.filter(f => Number(item[f]) < 0);
+  if (negativos.length) {
+    errors.push("Item " + (idx+1) + " (" + label + "): valor negativo não permitido em: " + negativos.join(", "));
+  }
+
+  const somaStatus = KPI_STATUS_FIELDS.reduce((acc, f) => acc + Number(item[f] || 0), 0);
+  if (somaStatus !== Number(item.TOTAL)) {
+    errors.push("Item " + (idx+1) + " (" + label + "): TOTAL (" + item.TOTAL + ") difere da soma de " +
+      KPI_STATUS_FIELDS.join("+") + " (" + somaStatus + ")");
+  }
+
+  const semaforoInvalido = KPI_SEMAFORO_FIELDS.filter(f => {
+    const v = String(item[f] || "").trim().toUpperCase();
+    return !KPI_SEMAFORO_VALUES.includes(v);
+  });
+  if (semaforoInvalido.length) {
+    errors.push("Item " + (idx+1) + " (" + label + "): semáforo inválido em: " +
+      semaforoInvalido.map(f => f + '="' + item[f] + '"').join(", ") +
+      " (valores aceitos: " + KPI_SEMAFORO_VALUES.join(", ") + ")");
+  }
+
+  if (String(item.ALT_VERSAO || "").length > KPI_ALT_VERSAO_MAXLEN) {
+    errors.push("Item " + (idx+1) + ": ALT_VERSAO excede " + KPI_ALT_VERSAO_MAXLEN + " caracteres");
+  }
+  KPI_SEMAFORO_FIELDS.forEach(f => {
+    if (String(item[f] || "").length > KPI_SEMAFORO_MAXLEN) {
+      errors.push("Item " + (idx+1) + " (" + label + "): " + f + " excede " + KPI_SEMAFORO_MAXLEN + " caracteres");
+    }
+  });
+
+  return errors;
 }
 
 function parseSheetDate_(value, tz) {
@@ -925,6 +971,9 @@ function saveKPIDataManual(jsonString, origem) {
       if (invalidNum.length)
         throw new Error("Item " + (idx+1) + " (" + label + "): valor inválido em: " +
           invalidNum.map(f => f + '="' + item[f] + '"').join(", "));
+
+      const businessErrors = validateKpiItemBusinessRules_(item, idx, label);
+      if (businessErrors.length) throw new Error(businessErrors.join(" | "));
 
       const baseRow = [
         String(item.ALT_VERSAO   || ""),

@@ -979,6 +979,38 @@ const NUMERIC_FIELDS = [
   'ABERTA','ANDAMENTO','CORRIGINDO','CORRIGIDO','CONFERIDO','TOTAL',
   'KPI_ABERTA_ANDAMENTO','KPI_CORRIGINDO_CORRIGIDO','KPI_CONFERIDO'
 ];
+const STATUS_FIELDS   = ['ABERTA','ANDAMENTO','CORRIGINDO','CORRIGIDO','CONFERIDO'];
+const SEMAFORO_FIELDS = ['SEMAFORO_ABERTA_ANDAMENTO','SEMAFORO_CORRIGINDO_CORRIGIDO','SEMAFORO_CONFERIDO'];
+const SEMAFORO_VALUES = ['VERDE','AMARELO','VERMELHO'];
+const ALT_VERSAO_MAXLEN = 60;
+const SEMAFORO_MAXLEN   = 20;
+
+// Mesmas regras de negócio aplicadas em codigo.gs (validateKpiItemBusinessRules_).
+// É apenas feedback antecipado — o back-end é a fonte final de verdade.
+function validateKpiItemBusinessRules(item, idx, label) {
+  const errors = [];
+
+  const negativos = NUMERIC_FIELDS.filter(f => Number(item[f]) < 0);
+  if (negativos.length) errors.push('Item ' + (idx+1) + ' (' + label + '): valor negativo não permitido em: ' + negativos.join(', '));
+
+  const somaStatus = STATUS_FIELDS.reduce((acc, f) => acc + Number(item[f] || 0), 0);
+  if (somaStatus !== Number(item.TOTAL))
+    errors.push('Item ' + (idx+1) + ' (' + label + '): TOTAL (' + item.TOTAL + ') difere da soma de ' + STATUS_FIELDS.join('+') + ' (' + somaStatus + ')');
+
+  const semaforoInvalido = SEMAFORO_FIELDS.filter(f => !SEMAFORO_VALUES.includes(String(item[f] || '').trim().toUpperCase()));
+  if (semaforoInvalido.length)
+    errors.push('Item ' + (idx+1) + ' (' + label + '): semáforo inválido em: ' +
+      semaforoInvalido.map(f => f + '="' + item[f] + '"').join(', ') + ' (valores aceitos: ' + SEMAFORO_VALUES.join(', ') + ')');
+
+  if (String(item.ALT_VERSAO || '').length > ALT_VERSAO_MAXLEN)
+    errors.push('Item ' + (idx+1) + ': ALT_VERSAO excede ' + ALT_VERSAO_MAXLEN + ' caracteres');
+  SEMAFORO_FIELDS.forEach(f => {
+    if (String(item[f] || '').length > SEMAFORO_MAXLEN)
+      errors.push('Item ' + (idx+1) + ' (' + label + '): ' + f + ' excede ' + SEMAFORO_MAXLEN + ' caracteres');
+  });
+
+  return errors;
+}
 
 function validarJSON() {
   const raw     = document.getElementById('kpiJson').value.trim();
@@ -1008,10 +1040,10 @@ function validarJSON() {
     const missing = REQUIRED_FIELDS.filter(f => item[f] === undefined || item[f] === null);
     if (missing.length)
       errors.push('Item ' + (i+1) + ' (' + label + '): campos ausentes — ' + missing.join(', '));
-    NUMERIC_FIELDS.forEach(f => {
-      if (item[f] !== undefined && item[f] !== null && !isValidNumericValue(item[f]))
-        errors.push('Item ' + (i+1) + ' (' + label + '): "' + f + '" valor inválido (recebido: "' + item[f] + '")');
-    });
+    const invalidNum = NUMERIC_FIELDS.filter(f => item[f] !== undefined && item[f] !== null && !isValidNumericValue(item[f]));
+    invalidNum.forEach(f =>
+      errors.push('Item ' + (i+1) + ' (' + label + '): "' + f + '" valor inválido (recebido: "' + item[f] + '")'));
+    if (!missing.length && !invalidNum.length) errors.push(...validateKpiItemBusinessRules(item, i, label));
   });
 
   if (errors.length) {
