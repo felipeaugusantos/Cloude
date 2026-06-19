@@ -61,10 +61,15 @@ function showErr(msg) {
 // ═══════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
   setupTabTransitions();
+  initCardTooltips();
   fetchData();
   startKPIReminder();
   setInterval(fetchData, 5 * 60 * 1000);
 });
+
+function initCardTooltips() {
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+}
 
 function setupTabTransitions() {
   const tabContent = document.querySelector('.dashboard-tab-content');

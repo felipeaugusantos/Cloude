@@ -273,7 +273,7 @@
       <!-- Mini stats -->
       <div class="row g-3 mb-4">
         <div class="col-sm-6 col-lg-3 col-xl">
-          <div class="mini-stat" style="background:#0d6efd">
+          <div class="mini-stat" style="background:#0d6efd" data-bs-toggle="tooltip" data-bs-placement="top" title="Percentual de registros que possuem uma versão de revisão preenchida.">
             <div>
               <div class="num" id="rTaxaRevisao">—%</div>
               <div class="lbl">Taxa de Revisão</div>
@@ -282,7 +282,7 @@
           </div>
         </div>
         <div class="col-sm-6 col-lg-3 col-xl">
-          <div class="mini-stat" style="background:#6610f2">
+          <div class="mini-stat" style="background:#6610f2" data-bs-toggle="tooltip" data-bs-placement="top" title="Percentual do volume total concentrado nos 3 clientes com mais registros.">
             <div>
               <div class="num" id="rConcentracao">—%</div>
               <div class="lbl">Concentração Top 3</div>
@@ -291,7 +291,7 @@
           </div>
         </div>
         <div class="col-sm-6 col-lg-3 col-xl">
-          <div class="mini-stat" style="background:#198754">
+          <div class="mini-stat" style="background:#198754" data-bs-toggle="tooltip" data-bs-placement="top" title="Total de registros nos últimos 7 dias, com variação percentual em relação aos 7 dias anteriores.">
             <div>
               <div class="num" id="rUltimos7">— <span id="rTendencia7" style="font-size:1rem"></span></div>
               <div class="lbl">Últimos 7 Dias</div>
@@ -300,7 +300,7 @@
           </div>
         </div>
         <div class="col-sm-6 col-lg-3 col-xl">
-          <div class="mini-stat" style="background:#fd7e14">
+          <div class="mini-stat" style="background:#fd7e14" data-bs-toggle="tooltip" data-bs-placement="top" title="Total de registros do mês corrente, até a data de hoje.">
             <div>
               <div class="num" id="rMesAtual">—</div>
               <div class="lbl">Mês Atual</div>
@@ -309,7 +309,7 @@
           </div>
         </div>
         <div class="col-sm-6 col-lg-3 col-xl">
-          <div class="mini-stat" style="background:#dc3545">
+          <div class="mini-stat" style="background:#dc3545" data-bs-toggle="tooltip" data-bs-placement="top" title="Registros sem o campo 'caminho' preenchido — indicam falha de processo ou dado incompleto.">
             <div>
               <div class="num" id="rSemCaminho">—</div>
               <div class="lbl">Sem Caminho</div>
@@ -322,7 +322,7 @@
       <!-- Mini stats — análises refinadas -->
       <div class="row g-3 mb-4">
         <div class="col-sm-6 col-lg-4">
-          <div class="mini-stat" style="background:#20c997">
+          <div class="mini-stat" style="background:#20c997" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume do mês atual com o mesmo intervalo de dias do mês anterior (evita distorção de mês incompleto).">
             <div>
               <div class="num" id="rVariacaoMensal">—%</div>
               <div class="lbl">Comparativo Mensal (vs. mês anterior)</div>
@@ -331,7 +331,7 @@
           </div>
         </div>
         <div class="col-sm-6 col-lg-4">
-          <div class="mini-stat" style="background:#d63384">
+          <div class="mini-stat" style="background:#d63384" data-bs-toggle="tooltip" data-bs-placement="top" title="Quantos desvios-padrão o volume de hoje está da média dos últimos 30 dias. Valores absolutos acima de 2 indicam anomalia estatística.">
             <div>
               <div class="num" id="rZScore">—</div>
               <div class="lbl">Anomalia do Dia (z-score)</div>
@@ -340,7 +340,7 @@
           </div>
         </div>
         <div class="col-sm-6 col-lg-4">
-          <div class="mini-stat" style="background:#0dcaf0">
+          <div class="mini-stat" style="background:#0dcaf0" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume de hoje com a média histórica do mesmo dia da semana nos últimos 30 dias.">
             <div>
               <div class="num" id="rTendenciaSemanal">—%</div>
               <div class="lbl">Tendência Ajustada por Dia da Semana</div>
@@ -353,13 +353,13 @@
       <!-- Charts row 1 -->
       <div class="row g-3 mb-3">
         <div class="col-md-6">
-          <div class="card chart-card p-3">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top" title="Volume total de registros por mês, nos últimos 12 meses.">
             <h6 class="card-title text-muted mb-2">Evolução Mensal (12 meses)</h6>
             <div style="height:220px"><canvas id="chartMensal"></canvas></div>
           </div>
         </div>
         <div class="col-md-6">
-          <div class="card chart-card p-3">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top" title="Volume total de registros agrupado por dia da semana.">
             <h6 class="card-title text-muted mb-2">Dia da Semana</h6>
             <div style="height:220px"><canvas id="chartSemana"></canvas></div>
           </div>
@@ -369,13 +369,13 @@
       <!-- Charts row 2 -->
       <div class="row g-3 mb-3">
         <div class="col-md-6">
-          <div class="card chart-card p-3">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top" title="Volume diário de registros nos últimos 30 dias, com linha de tendência.">
             <h6 class="card-title text-muted mb-2">Tendência 30 Dias</h6>
             <canvas id="chartTendencia" height="120"></canvas>
           </div>
         </div>
         <div class="col-md-6">
-          <div class="card chart-card p-3">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top" title="Volume por cliente e percentual acumulado, para identificar quem concentra a maior parte do volume.">
             <h6 class="card-title text-muted mb-2">Análise de Pareto — Clientes</h6>
             <canvas id="chartPareto" height="120"></canvas>
           </div>
@@ -385,13 +385,13 @@
       <!-- Charts row 3 -->
       <div class="row g-3">
         <div class="col-md-6">
-          <div class="card chart-card p-3">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top" title="Os 10 clientes com maior volume de registros.">
             <h6 class="card-title text-muted mb-2">Top 10 — Volume por Cliente</h6>
             <canvas id="chartTop10" height="130"></canvas>
           </div>
         </div>
         <div class="col-md-6">
-          <div class="card chart-card p-3">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top" title="Os 10 clientes com maior percentual de registros revisados.">
             <h6 class="card-title text-muted mb-2">Top 10 — Taxa de Revisão</h6>
             <canvas id="chartTopRevisoes" height="130"></canvas>
           </div>
@@ -401,7 +401,7 @@
       <!-- Matriz de risco por cliente + Qualidade por versão -->
       <div class="row g-3 mt-3">
         <div class="col-md-6">
-          <div class="card chart-card p-3">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top" title="Combina volume, % sem caminho e taxa de revisão em um score único, classificado por percentil entre os clientes filtrados.">
             <h6 class="card-title text-muted mb-2">Matriz de Risco por Cliente <small class="text-muted">(volume + sem caminho + revisão)</small></h6>
             <div class="table-container" style="max-height:320px">
               <table class="table table-sm table-hover mb-0">
@@ -412,7 +412,7 @@
           </div>
         </div>
         <div class="col-md-6">
-          <div class="card chart-card p-3">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top" title="Cruza volume, % sem caminho e taxa de revisão por versão de software.">
             <h6 class="card-title text-muted mb-2">Qualidade por Versão <small class="text-muted">(drill-down cruzado)</small></h6>
             <div class="table-container" style="max-height:320px">
               <table class="table table-sm table-hover mb-0">
