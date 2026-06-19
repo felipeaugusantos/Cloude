@@ -270,6 +270,19 @@
         </div>
       </div>
 
+      <!-- Resumo Executivo -->
+      <div class="card mb-4 border-0 shadow-sm exec-summary" id="execSummaryCard">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+            <h6 class="card-title text-muted mb-0">Resumo Executivo</h6>
+            <span class="badge" id="execSummaryStatus">—</span>
+          </div>
+          <p class="mb-2 fw-semibold" id="execSummaryHeadline">Carregando análise…</p>
+          <ul class="mb-2 ps-3" id="execSummaryBullets"></ul>
+          <div class="small text-muted"><strong>Ação principal:</strong> <span id="execSummaryAction">—</span></div>
+        </div>
+      </div>
+
       <!-- Mini stats -->
       <div class="row g-3 mb-4">
         <div class="col-sm-6 col-lg-3 col-xl">
@@ -313,9 +326,21 @@
             <div>
               <div class="num" id="rSemCaminho">—</div>
               <div class="lbl">Sem Caminho</div>
+              <div class="badge mt-1" id="rSemCaminhoStatus" style="display:none"></div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">⚠️</span>
           </div>
+        </div>
+      </div>
+
+      <!-- Prioridades de Ação -->
+      <div class="card chart-card p-3 mb-4" data-bs-toggle="tooltip" data-bs-placement="top" title="Recomendações operacionais geradas a partir da matriz de risco, qualidade por versão e indicadores de tendência.">
+        <h6 class="card-title text-muted mb-2">Prioridades de Ação</h6>
+        <div class="table-container" style="max-height:280px">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>#</th><th>Tipo</th><th>Alvo</th><th>Problema</th><th>Impacto</th><th>Ação Sugerida</th><th>Nível</th></tr></thead>
+            <tbody id="actionPrioritiesBody"><tr><td colspan="7" class="text-center text-muted py-3">Sem dados</td></tr></tbody>
+          </table>
         </div>
       </div>
 
@@ -355,6 +380,7 @@
         <div class="col-md-6">
           <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top" title="Volume total de registros por mês, nos últimos 12 meses.">
             <h6 class="card-title text-muted mb-2">Evolução Mensal (12 meses)</h6>
+            <div class="small text-muted mb-1" id="insightMensal"></div>
             <div style="height:220px"><canvas id="chartMensal"></canvas></div>
           </div>
         </div>
@@ -377,6 +403,7 @@
         <div class="col-md-6">
           <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top" title="Volume por cliente e percentual acumulado, para identificar quem concentra a maior parte do volume.">
             <h6 class="card-title text-muted mb-2">Análise de Pareto — Clientes</h6>
+            <div class="small text-muted mb-1" id="insightPareto"></div>
             <canvas id="chartPareto" height="120"></canvas>
           </div>
         </div>
@@ -405,8 +432,8 @@
             <h6 class="card-title text-muted mb-2">Matriz de Risco por Cliente <small class="text-muted">(volume + sem caminho + revisão)</small></h6>
             <div class="table-container" style="max-height:320px">
               <table class="table table-sm table-hover mb-0">
-                <thead><tr><th>Cliente</th><th>Vol.%</th><th>Sem Cam.%</th><th>Revisão%</th><th>Score</th><th>Status</th></tr></thead>
-                <tbody id="riskMatrixBody"><tr><td colspan="6" class="text-center text-muted py-3">Sem dados</td></tr></tbody>
+                <thead><tr><th>Cliente</th><th>Vol.%</th><th>Sem Cam.%</th><th>Revisão%</th><th>Score</th><th>Status</th><th>Motivo</th></tr></thead>
+                <tbody id="riskMatrixBody"><tr><td colspan="7" class="text-center text-muted py-3">Sem dados</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -416,8 +443,8 @@
             <h6 class="card-title text-muted mb-2">Qualidade por Versão <small class="text-muted">(drill-down cruzado)</small></h6>
             <div class="table-container" style="max-height:320px">
               <table class="table table-sm table-hover mb-0">
-                <thead><tr><th>Versão</th><th>Total</th><th>Sem Cam.%</th><th>Revisão%</th></tr></thead>
-                <tbody id="versaoQualBody"><tr><td colspan="4" class="text-center text-muted py-3">Sem dados</td></tr></tbody>
+                <thead><tr><th>Versão</th><th>Total</th><th>Sem Cam.%</th><th>Revisão%</th><th>Score</th><th>Status</th><th>Motivo</th></tr></thead>
+                <tbody id="versaoQualBody"><tr><td colspan="7" class="text-center text-muted py-3">Sem dados</td></tr></tbody>
               </table>
             </div>
           </div>

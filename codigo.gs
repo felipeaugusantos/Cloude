@@ -640,15 +640,34 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     const score            = Math.round(pctVolume*0.4 + semCPerc*0.4 + revPerc*0.2);
     return { cliente, total: cnt, pctVolume, semCaminhoPerc: semCPerc, taxaRevisaoPct: revPerc, score };
   });
+  // Status por percentil (adaptativo) complementado por regras absolutas conservadoras:
+  // as regras absolutas só podem ELEVAR a severidade (nunca reduzir o que o percentil já indicou),
+  // evitando que um cliente realmente problemático seja "escondido" por estar num grupo de pares ruins.
   const sortedScores = riskMatrixRaw.map(r => r.score).sort((a,b)=>a-b);
   riskMatrixRaw.forEach(r => {
     const percentil = sortedScores.length ? Math.round(sortedScores.filter(s => s <= r.score).length * 100 / sortedScores.length) : 0;
     r.percentil = percentil;
-    r.status = percentil >= 80 ? "Crítico" : percentil >= 50 ? "Atenção" : "Normal";
+    const statusPercentil = percentil >= 80 ? "Crítico" : percentil >= 50 ? "Atenção" : "Normal";
+    let status = statusPercentil;
+    let reason = "Classificado pelo percentil " + percentil + " da matriz de risco (volume + sem caminho + revisão) entre os clientes filtrados.";
+    if (r.semCaminhoPerc >= 10) {
+      status = "Crítico";
+      reason = "Sem caminho acima de 10% (" + r.semCaminhoPerc + "%), indicando falha recorrente de processo.";
+    } else if (r.semCaminhoPerc >= 5 && statusPercentil !== "Crítico") {
+      status = "Atenção";
+      reason = "Sem caminho acima de 5% (" + r.semCaminhoPerc + "%).";
+    } else if (r.pctVolume >= 35 && r.taxaRevisaoPct >= 40 && statusPercentil !== "Crítico") {
+      status = "Crítico";
+      reason = "Alta concentração de volume (" + r.pctVolume + "%) combinada com taxa de revisão elevada (" + r.taxaRevisaoPct + "%).";
+    }
+    r.status = status;
+    r.reason = reason;
   });
   const riskMatrix = riskMatrixRaw.sort((a,b)=>b.score-a.score).slice(0,10);
 
-  // Qualidade por versão (drill-down cruzado, complementa o Top 10 isolado de revisões)
+  // Qualidade por versão (drill-down cruzado, complementa o Top 10 isolado de revisões).
+  // Importante: taxa de revisão é tratada como indicador de MONITORAMENTO, não como problema
+  // absoluto isolado — por isso só eleva o status sozinha até "Atenção", nunca até "Crítico".
   const versaoQualMap = {};
   items.forEach(r => {
     const v = r.versao || "Sem versão";
@@ -657,9 +676,126 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     if (!r.caminho || !r.caminho.trim()) versaoQualMap[v].semCaminho++;
     if (r.revisao && r.revisao.trim()) versaoQualMap[v].comRev++;
   });
+  const totalVersoes = Object.values(versaoQualMap).reduce((a,v)=>a+v.total,0);
   const byVersaoQuality = Object.entries(versaoQualMap)
-    .map(([versao, v]) => ({ versao, total: v.total, semCaminhoPerc: v.total ? Math.round(v.semCaminho*100/v.total) : 0, taxaRevisaoPct: v.total ? Math.round(v.comRev*100/v.total) : 0 }))
-    .sort((a,b)=>b.total-a.total).slice(0,10);
+    .map(([versao, v]) => {
+      const semCaminhoPerc = v.total ? Math.round(v.semCaminho*100/v.total) : 0;
+      const taxaRevisaoPct = v.total ? Math.round(v.comRev*100/v.total) : 0;
+      const pctVolume      = totalVersoes ? Math.round(v.total*100/totalVersoes) : 0;
+      const score = Math.round(semCaminhoPerc*0.6 + taxaRevisaoPct*0.2 + pctVolume*0.2);
+      let status = "Normal";
+      const reasons = [];
+      if (semCaminhoPerc >= 10) { status = "Crítico"; reasons.push("sem caminho acima de 10% (" + semCaminhoPerc + "%)"); }
+      else if (semCaminhoPerc >= 5) { status = "Atenção"; reasons.push("sem caminho acima de 5% (" + semCaminhoPerc + "%)"); }
+      if (taxaRevisaoPct >= 40 && v.total >= 10) {
+        if (status === "Normal") status = "Atenção";
+        reasons.push("taxa de revisão elevada (" + taxaRevisaoPct + "%) — indicador de monitoramento, não necessariamente um problema isolado");
+      }
+      if (pctVolume >= 30 && status !== "Normal") reasons.push("alto volume (" + pctVolume + "% do total de versões no período)");
+      const reason = reasons.length ? reasons.join("; ") : "Sem indicadores fora do padrão.";
+      return { versao, total: v.total, semCaminhoPerc, taxaRevisaoPct, pctVolume, score, status, reason };
+    })
+    .sort((a,b) => b.score - a.score || b.total - a.total)
+    .slice(0,10);
+
+  // ─── Resumo executivo e prioridades de ação ──────────────────────────────────
+  // Reaproveita os indicadores já calculados acima (matriz de risco, qualidade por versão,
+  // % sem caminho, concentração, z-score, variação mensal) para montar um resumo de alto
+  // nível e uma lista priorizada de ações. Regra conservadora: o status geral só chega a
+  // "Crítico" quando há pelo menos um indicador absoluto (sem caminho >=10%, ou cliente/versão
+  // já classificado como "Crítico"), nunca apenas por percentil isolado.
+  const criticalClients   = riskMatrix.filter(r => r.status === "Crítico");
+  const attentionClients  = riskMatrix.filter(r => r.status === "Atenção");
+  const criticalVersions  = byVersaoQuality.filter(v => v.status === "Crítico");
+  const attentionVersions = byVersaoQuality.filter(v => v.status === "Atenção");
+
+  let summaryStatus = "Normal", summaryLevel = "success";
+  if (semCaminhoPerc >= 10 || criticalClients.length || criticalVersions.length) {
+    summaryStatus = "Crítico"; summaryLevel = "danger";
+  } else if (semCaminhoPerc >= 5 || attentionClients.length || attentionVersions.length || Math.abs(zScoreHoje) >= 2) {
+    summaryStatus = "Atenção"; summaryLevel = "warning";
+  }
+
+  const headline = summaryStatus === "Crítico"
+    ? "Há pontos críticos que exigem ação imediata no período filtrado."
+    : summaryStatus === "Atenção"
+    ? "A operação está estável, mas há pontos de atenção a monitorar."
+    : "A operação está dentro do padrão esperado no período filtrado.";
+
+  const bullets = [];
+  if (semCaminho > 0) bullets.push(semCaminhoPerc + "% dos registros estão sem caminho (" + semCaminho + " de " + total + ").");
+  if (concentracao > 0) bullets.push("Os 3 maiores clientes concentram " + concentracao + "% do volume.");
+  if (Math.abs(zScoreHoje) >= 1.5) bullets.push("Hoje está " + (zScoreHoje > 0 ? "acima" : "abaixo") + " do padrão histórico dos últimos 30 dias (z-score " + zScoreHoje + ").");
+  if (criticalClients[0]) bullets.push(criticalClients[0].cliente + " é o principal ponto de atenção entre os clientes (" + criticalClients[0].reason.toLowerCase() + ").");
+  else if (attentionClients[0]) bullets.push(attentionClients[0].cliente + " merece monitoramento entre os clientes (" + attentionClients[0].reason.toLowerCase() + ").");
+  if (criticalVersions[0]) bullets.push("A versão " + criticalVersions[0].versao + " apresenta o maior risco de qualidade (" + criticalVersions[0].reason + ").");
+  if (Math.abs(variacaoMensal) >= 30) bullets.push("O volume deste mês está " + (variacaoMensal>0?"+":"") + variacaoMensal + "% em relação ao mesmo intervalo do mês anterior.");
+  if (!bullets.length) bullets.push("Nenhum desvio relevante foi identificado para o período filtrado.");
+
+  let mainAction = "Nenhuma ação prioritária identificada — manter monitoramento de rotina.";
+  if (criticalClients.length) mainAction = "Regularizar pendências de " + criticalClients[0].cliente + " (" + criticalClients[0].reason.toLowerCase() + ").";
+  else if (criticalVersions.length) mainAction = "Investigar a versão " + criticalVersions[0].versao + " (" + criticalVersions[0].reason + ").";
+  else if (semCaminhoPerc >= 5) mainAction = "Regularizar os " + semCaminho + " registro(s) sem caminho.";
+  else if (attentionClients.length) mainAction = "Monitorar " + attentionClients[0].cliente + " (" + attentionClients[0].reason.toLowerCase() + ").";
+
+  const executiveSummary = {
+    status: summaryStatus, statusLevel: summaryLevel, headline,
+    bullets: bullets.slice(0,5), mainAction,
+  };
+
+  // Prioridades de ação: reaproveita os mesmos achados (clientes/versões críticos e de atenção,
+  // sem caminho, anomalias de tendência), ordenados por severidade.
+  const actionCandidates = [];
+  criticalClients.concat(attentionClients).slice(0,3).forEach(r => {
+    actionCandidates.push({
+      type: "Cliente", target: r.cliente,
+      problem: r.reason,
+      impact: r.total + " registro(s), " + r.pctVolume + "% do volume filtrado.",
+      action: r.status === "Crítico" ? "Regularizar pendências e revisar processo do cliente." : "Monitorar indicadores do cliente nas próximas atualizações.",
+      level: r.status,
+    });
+  });
+  criticalVersions.concat(attentionVersions).slice(0,3).forEach(v => {
+    actionCandidates.push({
+      type: "Versão", target: v.versao,
+      problem: v.reason,
+      impact: v.total + " registro(s) na versão.",
+      action: v.status === "Crítico" ? "Investigar causa raiz dos problemas de qualidade da versão." : "Acompanhar evolução dos indicadores da versão.",
+      level: v.status,
+    });
+  });
+  if (semCaminhoPerc >= 5) {
+    actionCandidates.push({
+      type: "Qualidade", target: "Base geral",
+      problem: semCaminhoPerc + "% dos registros estão sem caminho preenchido.",
+      impact: semCaminho + " registro(s) afetados.",
+      action: "Regularizar caminhos pendentes para evitar bloqueio de conferência.",
+      level: semCaminhoPerc >= 10 ? "Crítico" : "Atenção",
+    });
+  }
+  if (Math.abs(zScoreHoje) >= 2) {
+    actionCandidates.push({
+      type: "Tendência", target: "Volume do dia",
+      problem: "Volume de hoje está a " + zScoreHoje + " desvios-padrão da média dos últimos 30 dias.",
+      impact: "Possível variação atípica de demanda ou processo.",
+      action: "Investigar a causa da variação atípica do dia.",
+      level: Math.abs(zScoreHoje) >= 2.5 ? "Crítico" : "Atenção",
+    });
+  }
+  if (variacaoMensal >= 30) {
+    actionCandidates.push({
+      type: "Tendência", target: "Volume mensal",
+      problem: "Volume do mês está " + variacaoMensal + "% acima do mesmo intervalo do mês anterior.",
+      impact: "Crescimento acelerado pode exigir reforço operacional.",
+      action: "Avaliar capacidade operacional para sustentar o crescimento.",
+      level: "Atenção",
+    });
+  }
+  const sevRank = { "Crítico": 2, "Atenção": 1, "Normal": 0 };
+  const actionPriorities = actionCandidates
+    .sort((a,b) => sevRank[b.level] - sevRank[a.level])
+    .slice(0,5)
+    .map((a,i) => Object.assign({ priority: i+1 }, a));
 
   return {
     mensal: Object.entries(mensalMap).reduce((o,[k,v])=>{ o.labels.push(k); o.data.push(v); return o; },{labels:[],data:[]}),
@@ -670,6 +806,7 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     zScoreHoje, mean30: Math.round(mean30*10)/10, stdDev30: Math.round(stdDev30*10)/10,
     tendenciaSemanalAjustada,
     riskMatrix, byVersaoQuality,
+    executiveSummary, actionPriorities,
   };
 }
 
