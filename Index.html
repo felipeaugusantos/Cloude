@@ -321,6 +321,37 @@
         </div>
       </div>
 
+      <!-- Mini stats — análises refinadas -->
+      <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg-4">
+          <div class="mini-stat" style="background:#20c997">
+            <div>
+              <div class="num" id="rVariacaoMensal">—%</div>
+              <div class="lbl">Comparativo Mensal (vs. mês anterior)</div>
+            </div>
+            <span style="font-size:1.6rem;opacity:.7">📊</span>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="mini-stat" style="background:#d63384">
+            <div>
+              <div class="num" id="rZScore">—</div>
+              <div class="lbl">Anomalia do Dia (z-score)</div>
+            </div>
+            <span style="font-size:1.6rem;opacity:.7">📡</span>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="mini-stat" style="background:#0dcaf0">
+            <div>
+              <div class="num" id="rTendenciaSemanal">—%</div>
+              <div class="lbl">Tendência Ajustada por Dia da Semana</div>
+            </div>
+            <span style="font-size:1.6rem;opacity:.7">🗓️</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Charts row 1 -->
       <div class="row g-3 mb-3">
         <div class="col-md-8">
@@ -365,6 +396,32 @@
           <div class="card chart-card p-3">
             <h6 class="card-title text-muted mb-2">Top 10 — Taxa de Revisão</h6>
             <canvas id="chartTopRevisoes" height="130"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Matriz de risco por cliente + Qualidade por versão -->
+      <div class="row g-3 mt-3">
+        <div class="col-md-6">
+          <div class="card chart-card p-3">
+            <h6 class="card-title text-muted mb-2">Matriz de Risco por Cliente <small class="text-muted">(volume + sem caminho + revisão)</small></h6>
+            <div class="table-container" style="max-height:320px">
+              <table class="table table-sm table-hover mb-0">
+                <thead><tr><th>Cliente</th><th>Vol.%</th><th>Sem Cam.%</th><th>Revisão%</th><th>Score</th><th>Status</th></tr></thead>
+                <tbody id="riskMatrixBody"><tr><td colspan="6" class="text-center text-muted py-3">Sem dados</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card chart-card p-3">
+            <h6 class="card-title text-muted mb-2">Qualidade por Versão <small class="text-muted">(drill-down cruzado)</small></h6>
+            <div class="table-container" style="max-height:320px">
+              <table class="table table-sm table-hover mb-0">
+                <thead><tr><th>Versão</th><th>Total</th><th>Sem Cam.%</th><th>Revisão%</th></tr></thead>
+                <tbody id="versaoQualBody"><tr><td colspan="4" class="text-center text-muted py-3">Sem dados</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

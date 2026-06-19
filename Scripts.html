@@ -487,6 +487,26 @@ function renderRelCharts(ch, r) {
   document.getElementById('rMesAtual').textContent = mesAtualIdx >= 0 ? r.mensal.data[mesAtualIdx] : 0;
   document.getElementById('rSemCaminho').textContent = r.semCaminhoCount + ' (' + r.semCaminhoPerc + '%)';
 
+  const vmEl = document.getElementById('rVariacaoMensal');
+  if (vmEl) {
+    const vm = r.variacaoMensal || 0;
+    vmEl.textContent = (vm > 0 ? '▲ +' : vm < 0 ? '▼ ' : '= ') + vm + '%';
+  }
+  const zsEl = document.getElementById('rZScore');
+  if (zsEl) {
+    const z = r.zScoreHoje || 0;
+    zsEl.textContent = z.toFixed(2);
+    zsEl.className = 'num ' + (Math.abs(z) >= 2.5 ? 'text-danger' : Math.abs(z) >= 1.5 ? 'text-warning' : '');
+  }
+  const tsEl = document.getElementById('rTendenciaSemanal');
+  if (tsEl) {
+    const ts = r.tendenciaSemanalAjustada || 0;
+    tsEl.textContent = (ts > 0 ? '▲ +' : ts < 0 ? '▼ ' : '= ') + ts + '%';
+  }
+
+  renderRiskMatrix(r.riskMatrix || []);
+  renderVersaoQuality(r.byVersaoQuality || []);
+
   destroyChart('chartMensal');
   charts.chartMensal = new Chart(document.getElementById('chartMensal'), {
     type: 'bar',
@@ -567,6 +587,36 @@ function renderRelCharts(ch, r) {
       plugins: { legend: { display: false } },
       scales: { x: { beginAtZero: true, ticks: { display: false }, grid: { display: false } } } }
   });
+}
+
+function renderRiskMatrix(rows) {
+  const tbody = document.getElementById('riskMatrixBody');
+  if (!tbody) return;
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Sem dados</td></tr>'; return; }
+  tbody.innerHTML = rows.map(row =>
+    '<tr>'
+    + '<td>' + esc(row.cliente) + '</td>'
+    + '<td>' + row.pctVolume + '%</td>'
+    + '<td>' + row.semCaminhoPerc + '%</td>'
+    + '<td>' + row.taxaRevisaoPct + '%</td>'
+    + '<td>' + row.score + '</td>'
+    + '<td><span class="badge bg-' + riskClass(row.status) + '">' + row.status + '</span></td>'
+    + '</tr>'
+  ).join('');
+}
+
+function renderVersaoQuality(rows) {
+  const tbody = document.getElementById('versaoQualBody');
+  if (!tbody) return;
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Sem dados</td></tr>'; return; }
+  tbody.innerHTML = rows.map(row =>
+    '<tr>'
+    + '<td>' + esc(row.versao) + '</td>'
+    + '<td>' + row.total + '</td>'
+    + '<td><span class="badge bg-' + (row.semCaminhoPerc >= 20 ? 'danger' : row.semCaminhoPerc >= 5 ? 'warning' : 'success') + '">' + row.semCaminhoPerc + '%</span></td>'
+    + '<td><span class="badge bg-' + (row.taxaRevisaoPct >= 40 ? 'danger' : row.taxaRevisaoPct >= 20 ? 'warning' : 'success') + '">' + row.taxaRevisaoPct + '%</span></td>'
+    + '</tr>'
+  ).join('');
 }
 
 function calcTrendLine(y) {

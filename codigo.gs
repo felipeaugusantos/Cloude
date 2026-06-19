@@ -498,12 +498,84 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
   const sumA7      = a7.reduce((a,b)=>a+b,0);
   const tendencia7 = sumA7 > 0 ? Math.round((sumU7-sumA7)*100/sumA7) : (sumU7>0?100:0);
 
+  // Comparativo mês atual x mês anterior (MoM)
+  const mesAtualKey    = Utilities.formatDate(new Date(), tz, "yyyy-MM");
+  const prevMonthDate  = new Date(); prevMonthDate.setDate(1); prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+  const mesAnteriorKey = Utilities.formatDate(prevMonthDate, tz, "yyyy-MM");
+  const mesAtualTotal    = mensalMap[mesAtualKey] || 0;
+  const mesAnteriorTotal = mensalMap[mesAnteriorKey] || 0;
+  const variacaoMensal   = mesAnteriorTotal ? Math.round((mesAtualTotal - mesAnteriorTotal) * 100 / mesAnteriorTotal) : (mesAtualTotal > 0 ? 100 : 0);
+
+  // Anomalia por z-score (média/desvio-padrão dos últimos 30 dias) em vez de % fixo
+  const trendKeys  = Object.keys(trend30Raw);
+  const trendVals  = trendKeys.map(k => trend30Raw[k]);
+  const n30        = trendVals.length;
+  const mean30     = n30 ? trendVals.reduce((a,b)=>a+b,0) / n30 : 0;
+  const variance30 = n30 ? trendVals.reduce((a,b)=>a+Math.pow(b-mean30,2),0) / n30 : 0;
+  const stdDev30   = Math.sqrt(variance30);
+  const todayCount = n30 ? trendVals[n30-1] : 0;
+  const zScoreHoje = stdDev30 ? Math.round(((todayCount-mean30)/stdDev30)*100)/100 : 0;
+
+  // Tendência ajustada por sazonalidade semanal: compara hoje com a média histórica do mesmo dia da semana
+  const weekdaySums = {}, weekdayCounts = {};
+  trendKeys.forEach(k => {
+    const p = k.split("-");
+    const wd = new Date(Number(p[0]), Number(p[1])-1, Number(p[2])).getDay();
+    weekdaySums[wd]   = (weekdaySums[wd]||0) + trend30Raw[k];
+    weekdayCounts[wd] = (weekdayCounts[wd]||0) + 1;
+  });
+  let tendenciaSemanalAjustada = 0;
+  if (n30) {
+    const todayKey = trendKeys[n30-1];
+    const p = todayKey.split("-");
+    const todayWd = new Date(Number(p[0]), Number(p[1])-1, Number(p[2])).getDay();
+    const weekdayAvg = weekdayCounts[todayWd] ? weekdaySums[todayWd] / weekdayCounts[todayWd] : 0;
+    tendenciaSemanalAjustada = weekdayAvg ? Math.round((todayCount-weekdayAvg)*100/weekdayAvg) : (todayCount>0?100:0);
+  }
+
+  // Matriz de risco por cliente: combina volume, % sem caminho e taxa de revisão num score único,
+  // classificado por percentil (adaptativo à própria distribuição dos clientes filtrados)
+  const cliSemCaminhoMap = {};
+  items.forEach(r => { if (!r.caminho || !r.caminho.trim()) cliSemCaminhoMap[r.cliente] = (cliSemCaminhoMap[r.cliente]||0)+1; });
+  const riskMatrixRaw = Object.entries(cliTotalMap).map(([cliente, cnt]) => {
+    const pctVolume      = total ? Math.round(cnt*100/total) : 0;
+    const semCCount      = cliSemCaminhoMap[cliente] || 0;
+    const semCPerc        = cnt ? Math.round(semCCount*100/cnt) : 0;
+    const revCount        = (cliRevMap[cliente] && cliRevMap[cliente].comRev) || 0;
+    const revPerc          = cnt ? Math.round(revCount*100/cnt) : 0;
+    const score            = Math.round(pctVolume*0.4 + semCPerc*0.4 + revPerc*0.2);
+    return { cliente, total: cnt, pctVolume, semCaminhoPerc: semCPerc, taxaRevisaoPct: revPerc, score };
+  });
+  const sortedScores = riskMatrixRaw.map(r => r.score).sort((a,b)=>a-b);
+  riskMatrixRaw.forEach(r => {
+    const percentil = sortedScores.length ? Math.round(sortedScores.filter(s => s <= r.score).length * 100 / sortedScores.length) : 0;
+    r.percentil = percentil;
+    r.status = percentil >= 80 ? "Crítico" : percentil >= 50 ? "Atenção" : "Normal";
+  });
+  const riskMatrix = riskMatrixRaw.sort((a,b)=>b.score-a.score).slice(0,10);
+
+  // Qualidade por versão (drill-down cruzado, complementa o Top 10 isolado de revisões)
+  const versaoQualMap = {};
+  items.forEach(r => {
+    const v = r.versao || "Sem versão";
+    if (!versaoQualMap[v]) versaoQualMap[v] = { total:0, semCaminho:0, comRev:0 };
+    versaoQualMap[v].total++;
+    if (!r.caminho || !r.caminho.trim()) versaoQualMap[v].semCaminho++;
+    if (r.revisao && r.revisao.trim()) versaoQualMap[v].comRev++;
+  });
+  const byVersaoQuality = Object.entries(versaoQualMap)
+    .map(([versao, v]) => ({ versao, total: v.total, semCaminhoPerc: v.total ? Math.round(v.semCaminho*100/v.total) : 0, taxaRevisaoPct: v.total ? Math.round(v.comRev*100/v.total) : 0 }))
+    .sort((a,b)=>b.total-a.total).slice(0,10);
+
   return {
     mensal: Object.entries(mensalMap).reduce((o,[k,v])=>{ o.labels.push(k); o.data.push(v); return o; },{labels:[],data:[]}),
     topRevisoes, pareto, taxaRevisao, concentracao, taxaRevisaoGlobal,
     tendencia7, ultimos7: sumU7, anteriores7: sumA7,
     semCaminhoCount: semCaminho, semCaminhoPerc,
-    mesAtualKey: Utilities.formatDate(new Date(), tz, "yyyy-MM"),
+    mesAtualKey, mesAtualTotal, mesAnteriorTotal, variacaoMensal,
+    zScoreHoje, mean30: Math.round(mean30*10)/10, stdDev30: Math.round(stdDev30*10)/10,
+    tendenciaSemanalAjustada,
+    riskMatrix, byVersaoQuality,
   };
 }
 
@@ -567,35 +639,38 @@ function buildDecision_(items, today, tz, ignoredClients, decisionPeriod) {
       return { cliente, total: count, pct, semCaminho: cliSemCaminho, taxaRevisao: count ? Math.round(cliComRev * 100 / count) : 0, status };
     });
 
-  const trendValues = rawCharts.trend30Raw ? Object.values(rawCharts.trend30Raw) : [];
-  const avg30 = trendValues.length ? trendValues.reduce((a,b)=>a+b,0) / trendValues.length : 0;
-  const spikePct = avg30 ? Math.round((hoje - avg30) * 100 / avg30) : 0;
+  // zScoreHoje e percentil do top cliente substituem os cortes fixos de "spike %"/"concentração %":
+  // ambos se adaptam à variabilidade real do período filtrado, em vez de um limiar arbitrário.
+  const zScoreHoje      = reports.zScoreHoje || 0;
+  const topClientRisk   = (reports.riskMatrix || []).find(r => r.cliente === topClientEntry[0]);
+  const topClientPctl   = topClientRisk ? topClientRisk.percentil : 0;
   const riskScore =
     (reports.semCaminhoPerc >= 10 ? 35 : reports.semCaminhoPerc >= 5 ? 20 : 0) +
-    (reports.concentracao >= 70 ? 30 : reports.concentracao >= 50 ? 15 : 0) +
-    (reports.tendencia7 >= 30 ? 20 : reports.tendencia7 >= 15 ? 10 : 0) +
+    (topClientPctl >= 80 ? 30 : topClientPctl >= 50 ? 15 : 0) +
+    (Math.abs(zScoreHoje) >= 2.5 ? 20 : Math.abs(zScoreHoje) >= 1.5 ? 10 : 0) +
     (dataQuality < 85 ? 20 : dataQuality < 95 ? 10 : 0);
   const riskLevel = riskScore >= 60 ? "Crítico" : riskScore >= 30 ? "Atenção" : "Normal";
 
   const recommendations = [];
   if (semCaminho > 0) recommendations.push({ level: semCaminho >= 10 ? "Crítico" : "Atenção", title: "Corrigir caminhos ausentes", detail: semCaminho + " registro(s) sem caminho podem bloquear conferência ou comunicação." });
-  if (topClientEntry[1] && total && Math.round(topClientEntry[1] * 100 / total) >= 30) recommendations.push({ level: "Atenção", title: "Monitorar concentração por cliente", detail: topClientEntry[0] + " concentra " + Math.round(topClientEntry[1] * 100 / total) + "% do volume filtrado." });
-  if (reports.tendencia7 >= 20) recommendations.push({ level: "Atenção", title: "Preparar capacidade operacional", detail: "Os últimos 7 dias estão " + reports.tendencia7 + "% acima dos 7 dias anteriores." });
-  if (spikePct >= 50 && hoje >= 5) recommendations.push({ level: "Crítico", title: "Investigar pico diário", detail: "Hoje está " + spikePct + "% acima da média diária dos últimos 30 dias." });
+  if (topClientPctl >= 50) recommendations.push({ level: topClientPctl >= 80 ? "Crítico" : "Atenção", title: "Monitorar concentração por cliente", detail: topClientEntry[0] + " está no percentil " + topClientPctl + " da matriz de risco (volume + sem-caminho + revisão)." });
+  if (reports.variacaoMensal >= 30) recommendations.push({ level: "Atenção", title: "Crescimento mensal acelerado", detail: "O volume deste mês está " + reports.variacaoMensal + "% acima do mês anterior." });
+  if (Math.abs(zScoreHoje) >= 2 && hoje >= 5) recommendations.push({ level: Math.abs(zScoreHoje) >= 2.5 ? "Crítico" : "Atenção", title: "Investigar variação atípica do dia", detail: "Hoje está a " + zScoreHoje + " desvios-padrão da média dos últimos 30 dias (z-score)." });
   if (taxaRevisao >= 40) recommendations.push({ level: "Atenção", title: "Revisar causas de retrabalho", detail: "A taxa de revisão está em " + taxaRevisao + "% no período filtrado." });
   if (!recommendations.length) recommendations.push({ level: "Normal", title: "Operação estável", detail: "Nenhum desvio relevante foi identificado para o período filtrado." });
 
   const anomalies = [];
-  if (spikePct >= 50 && hoje >= 5) anomalies.push("Volume de hoje acima do padrão recente: +" + spikePct + "%.");
+  if (Math.abs(zScoreHoje) >= 2 && hoje >= 5) anomalies.push("Volume de hoje fora do padrão estatístico: z-score " + zScoreHoje + ".");
   if (reports.semCaminhoPerc >= 10) anomalies.push("Percentual de registros sem caminho acima de 10%.");
-  if (reports.concentracao >= 70) anomalies.push("Top 3 clientes concentram " + reports.concentracao + "% do volume.");
+  if (topClientPctl >= 80) anomalies.push(topClientEntry[0] + " está no percentil " + topClientPctl + " de risco entre os clientes filtrados.");
+  if (reports.variacaoMensal >= 30) anomalies.push("Volume mensal " + reports.variacaoMensal + "% acima do mês anterior.");
   if (dataQuality < 90) anomalies.push("Qualidade da base abaixo de 90%.");
 
   return {
     riskLevel, riskScore,
-    topClient: { name: topClientEntry[0], total: topClientEntry[1], pct: total ? Math.round(topClientEntry[1] * 100 / total) : 0 },
+    topClient: { name: topClientEntry[0], total: topClientEntry[1], pct: total ? Math.round(topClientEntry[1] * 100 / total) : 0, percentil: topClientPctl },
     topVersion: { name: topVersionEntry[0], total: topVersionEntry[1].total, semCaminho: topVersionEntry[1].semCaminho },
-    dataQuality, tendencia7: reports.tendencia7,
+    dataQuality, tendencia7: reports.tendencia7, zScoreHoje,
     semCaminho, semCaminhoPerc: reports.semCaminhoPerc, taxaRevisao,
     recommendations: recommendations.slice(0, 5),
     anomalies, topClients,
