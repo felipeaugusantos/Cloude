@@ -528,7 +528,7 @@ function renderRelCharts(ch, r) {
     type: 'bar',
     data: { labels: DAY_ORDER, datasets: [{ data: DAY_ORDER.map(k => ch.weekMap[k]||0), backgroundColor: '#6610f2', borderRadius: 4 }] },
     plugins: [makeLabelPlugin('vertical', { color: '#6610f2' })],
-    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
 
   destroyChart('chartTendencia');

@@ -498,12 +498,18 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
   const sumA7      = a7.reduce((a,b)=>a+b,0);
   const tendencia7 = sumA7 > 0 ? Math.round((sumU7-sumA7)*100/sumA7) : (sumU7>0?100:0);
 
-  // Comparativo mês atual x mês anterior (MoM)
-  const mesAtualKey    = Utilities.formatDate(new Date(), tz, "yyyy-MM");
+  // Comparativo mês atual x mês anterior (MoM). Quando o mês atual está em andamento,
+  // compara contra o mesmo intervalo de dias do mês anterior (e não o mês anterior completo),
+  // evitando o falso alarme de "queda" causado apenas por o mês corrente ter menos dias decorridos.
+  const hojeData       = new Date();
+  const diaAtualMes    = hojeData.getDate();
+  const mesAtualKey    = Utilities.formatDate(hojeData, tz, "yyyy-MM");
   const prevMonthDate  = new Date(); prevMonthDate.setDate(1); prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
   const mesAnteriorKey = Utilities.formatDate(prevMonthDate, tz, "yyyy-MM");
   const mesAtualTotal    = mensalMap[mesAtualKey] || 0;
-  const mesAnteriorTotal = mensalMap[mesAnteriorKey] || 0;
+  const mesAnteriorTotal = items.filter(r =>
+    r.dataOrigem.substring(0, 7) === mesAnteriorKey && Number(r.dataOrigem.substring(8, 10)) <= diaAtualMes
+  ).length;
   const variacaoMensal   = mesAnteriorTotal ? Math.round((mesAtualTotal - mesAnteriorTotal) * 100 / mesAnteriorTotal) : (mesAtualTotal > 0 ? 100 : 0);
 
   // Anomalia por z-score (média/desvio-padrão dos últimos 30 dias) em vez de % fixo
