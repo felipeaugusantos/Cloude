@@ -62,32 +62,13 @@ function showErr(msg) {
 // Init
 // ═══════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-  function doInit() {
-    setupTabTransitions();
-    initCardTooltips();
-    checkConfigDiagnostics();
-    checkAdminContext();
-    fetchData();
-    startKPIReminder();
-    setInterval(fetchData, 5 * 60 * 1000);
-  }
-
-  if (typeof bootstrap !== 'undefined' && typeof Chart !== 'undefined') {
-    doInit();
-    return;
-  }
-
-  let attempts = 0;
-  const watchdog = setInterval(() => {
-    attempts++;
-    if (typeof bootstrap !== 'undefined' && typeof Chart !== 'undefined') {
-      clearInterval(watchdog);
-      doInit();
-    } else if (attempts >= 45) {
-      clearInterval(watchdog);
-      showErr('Bibliotecas externas não carregaram. Verifique sua conexão e recarregue a página.');
-    }
-  }, 1000);
+  setupTabTransitions();
+  initCardTooltips();
+  checkConfigDiagnostics();
+  checkAdminContext();
+  fetchData();
+  startKPIReminder();
+  setInterval(fetchData, 5 * 60 * 1000);
 });
 
 function initCardTooltips() {
