@@ -14,6 +14,8 @@ let pendingKpiData = null;
 let lastDashResp   = null;   // stores last full dashboard response for report generation
 let ignoredDecisionClients = [];
 let decisionPeriod = '30d';
+let _isAdmin       = false;
+let _adminMe       = '';
 
 const INTERVALO_ALERTA = 2 * 60 * 60 * 1000;
 
@@ -60,12 +62,32 @@ function showErr(msg) {
 // Init
 // ═══════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-  setupTabTransitions();
-  initCardTooltips();
-  checkConfigDiagnostics();
-  fetchData();
-  startKPIReminder();
-  setInterval(fetchData, 5 * 60 * 1000);
+  function doInit() {
+    setupTabTransitions();
+    initCardTooltips();
+    checkConfigDiagnostics();
+    checkAdminContext();
+    fetchData();
+    startKPIReminder();
+    setInterval(fetchData, 5 * 60 * 1000);
+  }
+
+  if (typeof bootstrap !== 'undefined' && typeof Chart !== 'undefined') {
+    doInit();
+    return;
+  }
+
+  let attempts = 0;
+  const watchdog = setInterval(() => {
+    attempts++;
+    if (typeof bootstrap !== 'undefined' && typeof Chart !== 'undefined') {
+      clearInterval(watchdog);
+      doInit();
+    } else if (attempts >= 45) {
+      clearInterval(watchdog);
+      showErr('Bibliotecas externas não carregaram. Verifique sua conexão e recarregue a página.');
+    }
+  }, 1000);
 });
 
 function initCardTooltips() {
@@ -193,6 +215,14 @@ function renderAll(resp) {
   setText('cMedia7',     c.media7d);
   setText('cMedia30',    c.media30d);
   setText('cClientes',   c.clientes);
+  const aguardandoEl = document.getElementById('cAguardando');
+  if (aguardandoEl) aguardandoEl.textContent = c.aguardando != null ? c.aguardando : '—';
+
+  if (resp.meta) {
+    if (resp.meta.truncated) {
+      showSystemMsg('warning', '⚠️ Resultado truncado — ' + (resp.meta.descartadas || 0) + ' registro(s) com data inválida foram descartados da análise.');
+    }
+  }
 
   ['fCliente', 'rFCliente', 'decisionIgnoreSelect'].forEach(id => {
     const sel = document.getElementById(id);
@@ -1167,6 +1197,13 @@ function confirmarSalvar() {
           '<span class="text-danger">❌ ' + esc(resp ? resp.error : 'Erro ao salvar') + '</span>';
         return;
       }
+      if (resp.duplicate) {
+        document.getElementById('kpiImportMsg').innerHTML =
+          '<span class="text-warning">⚠️ ' + esc(resp.duplicateMsg || 'Sessão duplicada — dados idênticos já foram importados recentemente.') + '</span>';
+        pendingKpiData = null;
+        loadKpiData();
+        return;
+      }
       document.getElementById('kpiJson').value = '';
       const sidShort = resp.sessionId ? ' · ID: ' + resp.sessionId.substring(0,8) + '…' : '';
       document.getElementById('kpiImportMsg').innerHTML =
@@ -1358,4 +1395,116 @@ function applyKpiVersionFilter() {
     tr.style.display = (!q || tr.cells[0].textContent.toLowerCase().includes(q)) ? '' : 'none';
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Admin / Controle de Acessos
+// ═══════════════════════════════════════════════════════════════════════════
+function checkAdminContext() {
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (!resp || !resp.isAdmin) return;
+      _isAdmin = true;
+      _adminMe = resp.email || '';
+      const tabItem = document.getElementById('adminTabItem');
+      if (tabItem) tabItem.style.display = '';
+      const meLabel = document.getElementById('adminMeLabel');
+      if (meLabel) meLabel.textContent = _adminMe;
+    })
+    .withFailureHandler(() => {})
+    .getAdminContext();
+}
+
+function loadAcessos() {
+  const tbody = document.getElementById('adminAcessosBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Carregando...</td></tr>';
+  google.script.run
+    .withSuccessHandler(renderAcessos)
+    .withFailureHandler(err => {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-danger text-center py-3">' + esc(err.message) + '</td></tr>';
+    })
+    .listarAcessos();
+}
+
+function statusBadgeAcesso(s) {
+  const map = { 'APROVADO': 'success', 'BLOQUEADO': 'danger', 'PENDENTE': 'warning' };
+  const cls = map[String(s || '').toUpperCase()] || 'secondary';
+  return '<span class="badge bg-' + cls + '">' + esc(s || '—') + '</span>';
+}
+
+function renderAcessos(resp) {
+  const tbody = document.getElementById('adminAcessosBody');
+  if (!tbody) return;
+  if (!resp || !resp.ok) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-danger text-center py-3">' + esc(resp ? resp.error : 'Erro ao carregar acessos') + '</td></tr>';
+    return;
+  }
+  const rows = resp.acessos || [];
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Nenhum acesso registrado.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const email   = esc(r.email || '');
+    const status  = String(r.status || 'PENDENTE').toUpperCase();
+    const notif   = r.notificar ? '✅' : '—';
+    const ultimo  = r.ultimoAcesso ? esc(r.ultimoAcesso) : '—';
+    return '<tr>' +
+      '<td>' + email + '</td>' +
+      '<td>' + statusBadgeAcesso(r.status) + '</td>' +
+      '<td class="text-center">' + notif + '</td>' +
+      '<td class="small text-muted">' + ultimo + '</td>' +
+      '<td>' +
+        (status !== 'APROVADO'
+          ? '<button class="btn btn-success btn-sm me-1" data-fn="atualizarAcesso" data-email="' + email + '" data-acao="APROVADO" onclick="onAdminAction(this)">✅ Aprovar</button>'
+          : '') +
+        (status !== 'BLOQUEADO'
+          ? '<button class="btn btn-danger btn-sm me-1" data-fn="atualizarAcesso" data-email="' + email + '" data-acao="BLOQUEADO" onclick="onAdminAction(this)">🚫 Bloquear</button>'
+          : '') +
+        '<button class="btn btn-outline-secondary btn-sm me-1" data-fn="definirNotificar" data-email="' + email + '" data-acao="' + (!r.notificar) + '" onclick="onAdminAction(this)">' +
+          (r.notificar ? '🔕 Notif. Off' : '🔔 Notif. On') +
+        '</button>' +
+        '<button class="btn btn-outline-danger btn-sm" data-fn="removerAcesso" data-email="' + email + '" onclick="onAdminAction(this)">🗑 Remover</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function _adminRun(fnName, args) {
+  const msgEl = document.getElementById('adminMsg');
+  if (msgEl) msgEl.innerHTML = '<div class="text-muted small">Processando...</div>';
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (msgEl) {
+        msgEl.innerHTML = resp && resp.ok
+          ? '<div class="alert alert-success py-1 px-2 small">✅ Operação realizada com sucesso.</div>'
+          : '<div class="alert alert-danger py-1 px-2 small">❌ ' + esc(resp ? resp.error : 'Erro') + '</div>';
+      }
+      loadAcessos();
+    })
+    .withFailureHandler(err => {
+      if (msgEl) msgEl.innerHTML = '<div class="alert alert-danger py-1 px-2 small">❌ ' + esc(err.message) + '</div>';
+    })
+    [fnName](JSON.stringify(args));
+}
+
+function onAdminAction(btn) {
+  const fn    = btn.dataset.fn;
+  const email = btn.dataset.email;
+  const acao  = btn.dataset.acao;
+  if (!fn || !email) return;
+  if (fn === 'removerAcesso' && !confirm('Remover acesso de ' + email + '?')) return;
+  _adminRun(fn, { email, acao });
+}
+
+function adminAddEmail() {
+  const input = document.getElementById('adminNewEmail');
+  const email = input ? input.value.trim() : '';
+  if (!email) { alert('Informe um e-mail válido.'); return; }
+  _adminRun('atualizarAcesso', { email, acao: 'APROVADO' });
+  if (input) input.value = '';
+}
+
+document.querySelector('[data-bs-target="#tabAdmin"]') &&
+  document.querySelector('[data-bs-target="#tabAdmin"]')
+    .addEventListener('shown.bs.tab', () => { loadAcessos(); });
 </script>
