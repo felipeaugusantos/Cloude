@@ -609,6 +609,22 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
   const stdDev30   = Math.sqrt(variance30);
   const todayCount = n30 ? trendVals[n30-1] : 0;
   const zScoreHoje = stdDev30 ? Math.round(((todayCount-mean30)/stdDev30)*100)/100 : 0;
+  const todayKey   = n30 ? trendKeys[n30-1] : Utilities.formatDate(hojeData, tz, "yyyy-MM-dd");
+
+  // Previsão dos próximos 7 dias por regressão linear sobre os últimos 30 dias
+  let forecast7 = 0;
+  if (n30 >= 7) {
+    const fsx  = trendVals.reduce((_,__,i) => _ + i, 0);
+    const fsy  = trendVals.reduce((a,b) => a + b, 0);
+    const fsxx = trendVals.reduce((_,__,i) => _ + i*i, 0);
+    const fsxy = trendVals.reduce((a,b,i) => a + i*b, 0);
+    const fd   = n30*fsxx - fsx*fsx;
+    const fm   = fd ? (n30*fsxy - fsx*fsy) / fd : 0;
+    const fb   = fd ? (fsy - fm*fsx) / n30 : (fsy / n30);
+    let fSum   = 0;
+    for (let i = n30; i < n30 + 7; i++) fSum += Math.max(0, fm*i + fb);
+    forecast7 = Math.round(fSum / 7);
+  }
 
   // Tendência ajustada por sazonalidade semanal: compara hoje com a média histórica do mesmo dia da semana
   const weekdaySums = {}, weekdayCounts = {};
@@ -626,6 +642,13 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     const weekdayAvg = weekdayCounts[todayWd] ? weekdaySums[todayWd] / weekdayCounts[todayWd] : 0;
     tendenciaSemanalAjustada = weekdayAvg ? Math.round((todayCount-weekdayAvg)*100/weekdayAvg) : (todayCount>0?100:0);
   }
+
+  // Mapa diário por cliente — base para z-score individual e tendência semanal por cliente
+  const cliDailyMap = {};
+  items.forEach(r => {
+    if (!cliDailyMap[r.cliente]) cliDailyMap[r.cliente] = {};
+    cliDailyMap[r.cliente][r.dataOrigem] = (cliDailyMap[r.cliente][r.dataOrigem] || 0) + 1;
+  });
 
   // Matriz de risco por cliente: combina volume, % sem caminho e taxa de revisão num score único,
   // classificado por percentil (adaptativo à própria distribuição dos clientes filtrados)
@@ -671,6 +694,29 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     }
     r.status = status;
     r.reason = reason;
+
+    // Z-score individual do cliente (volume de hoje vs. média 30d do mesmo cliente)
+    const cliDays = cliDailyMap[r.cliente] || {};
+    const cliVals = Object.values(cliDays);
+    const cliN    = cliVals.length;
+    const cliMean = cliN ? cliVals.reduce((a,b)=>a+b,0)/cliN : 0;
+    const cliVar  = cliN ? cliVals.reduce((a,b)=>a+Math.pow(b-cliMean,2),0)/cliN : 0;
+    const cliStd  = Math.sqrt(cliVar);
+    r.zScoreCliente = cliStd ? Math.round((((cliDays[todayKey]||0) - cliMean) / cliStd)*100)/100 : 0;
+
+    // Tendência semanal por cliente (últimos 7 dias vs. 7 dias anteriores)
+    let cliSumU7 = 0, cliSumA7 = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(hojeData); d.setDate(d.getDate() - i);
+      cliSumU7 += cliDays[Utilities.formatDate(d, tz, "yyyy-MM-dd")] || 0;
+    }
+    for (let i = 7; i < 14; i++) {
+      const d = new Date(hojeData); d.setDate(d.getDate() - i);
+      cliSumA7 += cliDays[Utilities.formatDate(d, tz, "yyyy-MM-dd")] || 0;
+    }
+    r.tendenciaCliente = cliSumA7 > 0
+      ? Math.round((cliSumU7 - cliSumA7) * 100 / cliSumA7)
+      : (cliSumU7 > 0 ? 100 : 0);
   });
   const riskMatrix = riskMatrixRaw.sort((a,b)=>b.score-a.score).slice(0,10);
 
@@ -813,7 +859,7 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     semCaminhoCount: semCaminho, semCaminhoPerc,
     mesAtualKey, mesAtualTotal, mesAnteriorTotal, variacaoMensal,
     zScoreHoje, mean30: Math.round(mean30*10)/10, stdDev30: Math.round(stdDev30*10)/10,
-    tendenciaSemanalAjustada,
+    tendenciaSemanalAjustada, forecast7,
     riskMatrix, byVersaoQuality,
     executiveSummary, actionPriorities,
   };

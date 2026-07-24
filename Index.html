@@ -347,7 +347,7 @@
 
       <!-- Mini stats — análises refinadas -->
       <div class="row g-3 mb-4">
-        <div class="col-sm-6 col-lg-4">
+        <div class="col-sm-6 col-lg-3">
           <div class="mini-stat" style="background:#20c997" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume do mês atual com o mesmo intervalo de dias do mês anterior (evita distorção de mês incompleto).">
             <div>
               <div class="num" id="rVariacaoMensal">—%</div>
@@ -356,7 +356,7 @@
             <span style="font-size:1.6rem;opacity:.7">📊</span>
           </div>
         </div>
-        <div class="col-sm-6 col-lg-4">
+        <div class="col-sm-6 col-lg-3">
           <div class="mini-stat" style="background:#d63384" data-bs-toggle="tooltip" data-bs-placement="top" title="Quantos desvios-padrão o volume de hoje está da média dos últimos 30 dias. Valores absolutos acima de 2 indicam anomalia estatística.">
             <div>
               <div class="num" id="rZScore">—</div>
@@ -365,13 +365,22 @@
             <span style="font-size:1.6rem;opacity:.7">📡</span>
           </div>
         </div>
-        <div class="col-sm-6 col-lg-4">
+        <div class="col-sm-6 col-lg-3">
           <div class="mini-stat" style="background:#0dcaf0" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume de hoje com a média histórica do mesmo dia da semana nos últimos 30 dias.">
             <div>
               <div class="num" id="rTendenciaSemanal">—%</div>
               <div class="lbl">Tendência Ajustada por Dia da Semana</div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">🗓️</span>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="mini-stat" style="background:#6f42c1" data-bs-toggle="tooltip" data-bs-placement="top" title="Média diária prevista para os próximos 7 dias, calculada por regressão linear sobre os últimos 30 dias de volume.">
+            <div>
+              <div class="num" id="rForecast7">— /dia</div>
+              <div class="lbl">Previsão Próximos 7 Dias</div>
+            </div>
+            <span style="font-size:1.6rem;opacity:.7">🔮</span>
           </div>
         </div>
       </div>
@@ -433,8 +442,8 @@
             <h6 class="card-title text-muted mb-2">Matriz de Risco por Cliente <small class="text-muted">(volume + sem caminho + revisão)</small></h6>
             <div class="table-container" style="max-height:320px">
               <table class="table table-sm table-hover mb-0">
-                <thead><tr><th>Cliente</th><th>Vol.%</th><th>Sem Cam.%</th><th>Revisão%</th><th>Score</th><th>Status</th><th>Motivo</th></tr></thead>
-                <tbody id="riskMatrixBody"><tr><td colspan="7" class="text-center text-muted py-3">Sem dados</td></tr></tbody>
+                <thead><tr><th>Cliente</th><th>Vol.%</th><th>Sem Cam.%</th><th>Revisão%</th><th>Score</th><th>Tend. 7d</th><th>Status</th><th>Motivo</th></tr></thead>
+                <tbody id="riskMatrixBody"><tr><td colspan="8" class="text-center text-muted py-3">Sem dados</td></tr></tbody>
               </table>
             </div>
           </div>

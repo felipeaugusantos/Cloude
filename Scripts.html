@@ -561,6 +561,11 @@ function renderRelCharts(ch, r) {
     const ts = r.tendenciaSemanalAjustada || 0;
     tsEl.textContent = (ts > 0 ? '▲ +' : ts < 0 ? '▼ ' : '= ') + ts + '%';
   }
+  const fcEl = document.getElementById('rForecast7');
+  if (fcEl) {
+    const fc = r.forecast7 != null ? r.forecast7 : 0;
+    fcEl.textContent = fc ? '~' + fc + '/dia' : '— /dia';
+  }
 
   renderRiskMatrix(r.riskMatrix || []);
   renderVersaoQuality(r.byVersaoQuality || []);
@@ -661,21 +666,36 @@ function renderRelCharts(ch, r) {
   });
 }
 
+function trendIcon(v) {
+  if (v > 0) return '<span class="trend-up">▲</span>';
+  if (v < 0) return '<span class="trend-down">▼</span>';
+  return '<span class="trend-eq">=</span>';
+}
+
 function renderRiskMatrix(rows) {
   const tbody = document.getElementById('riskMatrixBody');
   if (!tbody) return;
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Sem dados</td></tr>'; return; }
-  tbody.innerHTML = rows.map(row =>
-    '<tr>'
-    + '<td>' + esc(row.cliente) + '</td>'
-    + '<td>' + row.pctVolume + '%</td>'
-    + '<td>' + row.semCaminhoPerc + '%</td>'
-    + '<td>' + row.taxaRevisaoPct + '%</td>'
-    + '<td>' + row.score + '</td>'
-    + '<td><span class="badge bg-' + riskClass(row.status) + '">' + row.status + '</span></td>'
-    + '<td class="small text-muted">' + esc(row.reason || '') + '</td>'
-    + '</tr>'
-  ).join('');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Sem dados</td></tr>'; return; }
+  tbody.innerHTML = rows.map(row => {
+    const tend = row.tendenciaCliente != null ? row.tendenciaCliente : 0;
+    const zCli = row.zScoreCliente  != null ? row.zScoreCliente  : 0;
+    const tendTitle = 'Últimos 7 dias vs. 7 dias anteriores para este cliente. Z-score individual: ' + zCli;
+    return '<tr>'
+      + '<td>' + esc(row.cliente) + '</td>'
+      + '<td>' + row.pctVolume + '%</td>'
+      + '<td>' + row.semCaminhoPerc + '%</td>'
+      + '<td>' + row.taxaRevisaoPct + '%</td>'
+      + '<td>' + row.score + '</td>'
+      + '<td title="' + esc(tendTitle) + '">'
+        + trendIcon(tend) + ' <small>' + (tend > 0 ? '+' : '') + tend + '%</small>'
+        + (Math.abs(zCli) >= 1.5
+            ? ' <small class="text-' + (Math.abs(zCli) >= 2.5 ? 'danger' : 'warning') + '" title="Z-score individual do cliente">z' + zCli + '</small>'
+            : '')
+      + '</td>'
+      + '<td><span class="badge bg-' + riskClass(row.status) + '">' + row.status + '</span></td>'
+      + '<td class="small text-muted">' + esc(row.reason || '') + '</td>'
+      + '</tr>';
+  }).join('');
 }
 
 function renderVersaoQuality(rows) {
