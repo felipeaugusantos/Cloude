@@ -65,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupTabTransitions();
   initCardTooltips();
   checkConfigDiagnostics();
-  checkAdminContext();
+  try { checkAdminContext(); } catch(e) {}  // falha silenciosa se getAdminContext não existir no backend
   fetchData();
   startKPIReminder();
   setInterval(fetchData, 5 * 60 * 1000);

@@ -1419,3 +1419,137 @@ function getKPITrendData() {
     return { ok: false, error: e.message };
   }
 }
+
+// ─── Administração de Acessos ─────────────────────────────────────────────────
+function isAdminUser_(email) {
+  if (!email) return false;
+  const adminUsers = (getScriptProp_("ADMIN_USERS") || "")
+    .split(",").map(e => e.toLowerCase().trim()).filter(Boolean);
+  if (adminUsers.includes(email)) return true;
+  try {
+    const owner = Session.getEffectiveUser().getEmail().toLowerCase().trim();
+    return !!owner && email === owner;
+  } catch(e) { return false; }
+}
+
+function getOrCreateAcessosSheet_() {
+  const ss = getSpreadsheet_();
+  let sheet = ss.getSheetByName("SYS_Acessos");
+  if (!sheet) {
+    sheet = ss.insertSheet("SYS_Acessos");
+    sheet.appendRow(["EMAIL", "STATUS", "NOTIFICAR", "ULTIMO_ACESSO"]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function getAdminContext() {
+  try {
+    const email = getActiveUserEmail_();
+    const isAdmin = isAdminUser_(email);
+    return { isAdmin, email };
+  } catch(e) {
+    return { isAdmin: false, email: "" };
+  }
+}
+
+function listarAcessos() {
+  try {
+    const email = getActiveUserEmail_();
+    if (!isAdminUser_(email)) return { ok: false, error: "Acesso negado." };
+    const sheet = getOrCreateAcessosSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return { ok: true, acessos: [] };
+    const data = sheet.getRange(2, 1, last - 1, 4).getValues();
+    const acessos = data
+      .filter(r => String(r[0] || "").trim())
+      .map(r => ({
+        email:       String(r[0] || "").trim(),
+        status:      String(r[1] || "PENDENTE").trim(),
+        notificar:   r[2] === true || String(r[2]).toUpperCase() === "TRUE",
+        ultimoAcesso: r[3] ? String(r[3]).substring(0, 16) : "",
+      }));
+    return { ok: true, acessos };
+  } catch(e) {
+    logEvent_("ERROR", "ADMIN", "listarAcessos", "Erro", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+function atualizarAcesso(jsonArgs) {
+  try {
+    if (!isAdminUser_(getActiveUserEmail_())) return { ok: false, error: "Acesso negado." };
+    const args        = JSON.parse(jsonArgs || "{}");
+    const targetEmail = String(args.email || "").toLowerCase().trim();
+    const acao        = String(args.acao  || "APROVADO").toUpperCase();
+    if (!targetEmail) return { ok: false, error: "E-mail inválido." };
+    const sheet = getOrCreateAcessosSheet_();
+    const last  = sheet.getLastRow();
+    let found   = false;
+    if (last >= 2) {
+      const emails = sheet.getRange(2, 1, last - 1, 1).getValues();
+      for (let i = 0; i < emails.length; i++) {
+        if (String(emails[i][0] || "").toLowerCase().trim() === targetEmail) {
+          sheet.getRange(i + 2, 2).setValue(acao);
+          found = true; break;
+        }
+      }
+    }
+    if (!found) sheet.appendRow([targetEmail, acao, false, ""]);
+    logEvent_("INFO", "ADMIN", "atualizarAcesso", "Acesso atualizado", targetEmail + " → " + acao);
+    return { ok: true };
+  } catch(e) {
+    logEvent_("ERROR", "ADMIN", "atualizarAcesso", "Erro", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+function definirNotificar(jsonArgs) {
+  try {
+    if (!isAdminUser_(getActiveUserEmail_())) return { ok: false, error: "Acesso negado." };
+    const args        = JSON.parse(jsonArgs || "{}");
+    const targetEmail = String(args.email || "").toLowerCase().trim();
+    const notificar   = String(args.acao) === "true";
+    if (!targetEmail) return { ok: false, error: "E-mail inválido." };
+    const sheet = getOrCreateAcessosSheet_();
+    const last  = sheet.getLastRow();
+    if (last >= 2) {
+      const emails = sheet.getRange(2, 1, last - 1, 1).getValues();
+      for (let i = 0; i < emails.length; i++) {
+        if (String(emails[i][0] || "").toLowerCase().trim() === targetEmail) {
+          sheet.getRange(i + 2, 3).setValue(notificar);
+          return { ok: true };
+        }
+      }
+    }
+    return { ok: false, error: "Usuário não encontrado." };
+  } catch(e) {
+    logEvent_("ERROR", "ADMIN", "definirNotificar", "Erro", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+function removerAcesso(jsonArgs) {
+  try {
+    if (!isAdminUser_(getActiveUserEmail_())) return { ok: false, error: "Acesso negado." };
+    const args        = JSON.parse(jsonArgs || "{}");
+    const targetEmail = String(args.email || "").toLowerCase().trim();
+    if (!targetEmail) return { ok: false, error: "E-mail inválido." };
+    const sheet = getOrCreateAcessosSheet_();
+    const last  = sheet.getLastRow();
+    if (last >= 2) {
+      const emails = sheet.getRange(2, 1, last - 1, 1).getValues();
+      for (let i = 0; i < emails.length; i++) {
+        if (String(emails[i][0] || "").toLowerCase().trim() === targetEmail) {
+          sheet.deleteRow(i + 2);
+          logEvent_("INFO", "ADMIN", "removerAcesso", "Acesso removido", targetEmail);
+          return { ok: true };
+        }
+      }
+    }
+    return { ok: false, error: "Usuário não encontrado." };
+  } catch(e) {
+    logEvent_("ERROR", "ADMIN", "removerAcesso", "Erro", e.message);
+    return { ok: false, error: e.message };
+  }
+}
