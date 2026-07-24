@@ -644,12 +644,21 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
   // as regras absolutas só podem ELEVAR a severidade (nunca reduzir o que o percentil já indicou),
   // evitando que um cliente realmente problemático seja "escondido" por estar num grupo de pares ruins.
   const sortedScores = riskMatrixRaw.map(r => r.score).sort((a,b)=>a-b);
+  // Com apenas 1 cliente na base filtrada o percentil seria sempre 100 (= "Crítico"),
+  // o que é enganoso. Abaixo de 2 clientes, usamos somente as regras absolutas.
+  const usePercentil = sortedScores.length >= 2;
   riskMatrixRaw.forEach(r => {
-    const percentil = sortedScores.length ? Math.round(sortedScores.filter(s => s <= r.score).length * 100 / sortedScores.length) : 0;
+    const percentil = usePercentil
+      ? Math.round(sortedScores.filter(s => s <= r.score).length * 100 / sortedScores.length)
+      : 0;
     r.percentil = percentil;
-    const statusPercentil = percentil >= 80 ? "Crítico" : percentil >= 50 ? "Atenção" : "Normal";
+    const statusPercentil = usePercentil
+      ? (percentil >= 80 ? "Crítico" : percentil >= 50 ? "Atenção" : "Normal")
+      : "Normal";
     let status = statusPercentil;
-    let reason = "Classificado pelo percentil " + percentil + " da matriz de risco (volume + sem caminho + revisão) entre os clientes filtrados.";
+    let reason = usePercentil
+      ? "Classificado pelo percentil " + percentil + " da matriz de risco (volume + sem caminho + revisão) entre os clientes filtrados."
+      : "Classificação por regras absolutas (base filtrada com um único cliente).";
     if (r.semCaminhoPerc >= 10) {
       status = "Crítico";
       reason = "Sem caminho acima de 10% (" + r.semCaminhoPerc + "%), indicando falha recorrente de processo.";
@@ -724,7 +733,7 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
 
   const bullets = [];
   if (semCaminho > 0) bullets.push(semCaminhoPerc + "% dos registros estão sem caminho (" + semCaminho + " de " + total + ").");
-  if (concentracao > 0) bullets.push("Os 3 maiores clientes concentram " + concentracao + "% do volume.");
+  if (concentracao >= 50) bullets.push("Os 3 maiores clientes concentram " + concentracao + "% do volume.");
   if (Math.abs(zScoreHoje) >= 1.5) bullets.push("Hoje está " + (zScoreHoje > 0 ? "acima" : "abaixo") + " do padrão histórico dos últimos 30 dias (z-score " + zScoreHoje + ").");
   if (criticalClients[0]) bullets.push(criticalClients[0].cliente + " é o principal ponto de atenção entre os clientes (" + criticalClients[0].reason.toLowerCase() + ").");
   else if (attentionClients[0]) bullets.push(attentionClients[0].cliente + " merece monitoramento entre os clientes (" + attentionClients[0].reason.toLowerCase() + ").");

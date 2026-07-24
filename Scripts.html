@@ -510,8 +510,9 @@ function renderRelCharts(ch, r) {
   if (scEl) {
     const scStatus = r.semCaminhoPerc >= 10 ? 'Crítico' : r.semCaminhoPerc >= 5 ? 'Atenção' : 'Normal';
     scEl.textContent = scStatus;
-    scEl.className = 'badge mt-1 bg-' + riskClass(scStatus);
-    scEl.style.display = '';
+    // bg-light text-dark mantém contraste dentro do mini-stat vermelho (bg-danger confundia com o fundo)
+    scEl.className = 'badge mt-1 bg-light text-dark';
+    scEl.style.display = scStatus !== 'Normal' ? '' : 'none';
   }
 
   const vmEl = document.getElementById('rVariacaoMensal');
@@ -1277,7 +1278,9 @@ function gerarRelatorioChat() {
     .withFailureHandler(err => {
       document.getElementById('chatReportContent').textContent = 'Erro: ' + err.message;
     })
-    .getDashboardData(JSON.stringify({ dataInicio: today, dataFim: today }));
+    // Sem filtro de data: buildCharts_ já isola cliHoje/versoesHojeMap internamente,
+    // e buildReports_ precisa da base completa para percentil/zScore/riskMatrix serem significativos.
+    .getDashboardData(JSON.stringify({}));
 }
 
 function copiarRelatorioChat() {
