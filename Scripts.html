@@ -551,7 +551,6 @@ function renderRelCharts(ch, r) {
   renderRiskMatrix(r.riskMatrix || []);
   renderVersaoQuality(r.byVersaoQuality || []);
   renderExecSummary(r.executiveSummary);
-  renderActionPriorities(r.actionPriorities || []);
 
   const insMensal = document.getElementById('insightMensal');
   if (insMensal) {
@@ -719,22 +718,6 @@ function renderExecSummary(summary) {
   actionEl.textContent = summary.mainAction || '—';
 }
 
-function renderActionPriorities(rows) {
-  const tbody = document.getElementById('actionPrioritiesBody');
-  if (!tbody) return;
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Nenhuma ação prioritária identificada</td></tr>'; return; }
-  tbody.innerHTML = rows.map(row =>
-    '<tr>'
-    + '<td>' + row.priority + '</td>'
-    + '<td>' + esc(row.type) + '</td>'
-    + '<td>' + esc(row.target) + '</td>'
-    + '<td class="small">' + esc(row.problem) + '</td>'
-    + '<td class="small">' + esc(row.impact) + '</td>'
-    + '<td class="small">' + esc(row.action) + '</td>'
-    + '<td><span class="badge bg-' + riskClass(row.level) + '">' + esc(row.level) + '</span></td>'
-    + '</tr>'
-  ).join('');
-}
 
 function calcTrendLine(y) {
   const n = y.length;

@@ -798,60 +798,6 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     bullets: bullets.slice(0,5), mainAction,
   };
 
-  // Prioridades de ação: reaproveita os mesmos achados (clientes/versões críticos e de atenção,
-  // sem caminho, anomalias de tendência), ordenados por severidade.
-  const actionCandidates = [];
-  criticalClients.concat(attentionClients).slice(0,3).forEach(r => {
-    actionCandidates.push({
-      type: "Cliente", target: r.cliente,
-      problem: r.reason,
-      impact: r.total + " registro(s), " + r.pctVolume + "% do volume filtrado.",
-      action: r.status === "Crítico" ? "Regularizar pendências e revisar processo do cliente." : "Monitorar indicadores do cliente nas próximas atualizações.",
-      level: r.status,
-    });
-  });
-  criticalVersions.concat(attentionVersions).slice(0,3).forEach(v => {
-    actionCandidates.push({
-      type: "Versão", target: v.versao,
-      problem: v.reason,
-      impact: v.total + " registro(s) na versão.",
-      action: v.status === "Crítico" ? "Investigar causa raiz dos problemas de qualidade da versão." : "Acompanhar evolução dos indicadores da versão.",
-      level: v.status,
-    });
-  });
-  if (semCaminhoPerc >= 5) {
-    actionCandidates.push({
-      type: "Qualidade", target: "Base geral",
-      problem: semCaminhoPerc + "% dos registros estão sem caminho preenchido.",
-      impact: semCaminho + " registro(s) afetados.",
-      action: "Regularizar caminhos pendentes para evitar bloqueio de conferência.",
-      level: semCaminhoPerc >= 10 ? "Crítico" : "Atenção",
-    });
-  }
-  if (Math.abs(zScoreHoje) >= 2) {
-    actionCandidates.push({
-      type: "Tendência", target: "Volume do dia",
-      problem: "Volume de hoje está a " + zScoreHoje + " desvios-padrão da média dos últimos 30 dias.",
-      impact: "Possível variação atípica de demanda ou processo.",
-      action: "Investigar a causa da variação atípica do dia.",
-      level: Math.abs(zScoreHoje) >= 2.5 ? "Crítico" : "Atenção",
-    });
-  }
-  if (variacaoMensal >= 30) {
-    actionCandidates.push({
-      type: "Tendência", target: "Volume mensal",
-      problem: "Volume do mês está " + variacaoMensal + "% acima do mesmo intervalo do mês anterior.",
-      impact: "Crescimento acelerado pode exigir reforço operacional.",
-      action: "Avaliar capacidade operacional para sustentar o crescimento.",
-      level: "Atenção",
-    });
-  }
-  const sevRank = { "Crítico": 2, "Atenção": 1, "Normal": 0 };
-  const actionPriorities = actionCandidates
-    .sort((a,b) => sevRank[b.level] - sevRank[a.level])
-    .slice(0,5)
-    .map((a,i) => Object.assign({ priority: i+1 }, a));
-
   return {
     mensal: Object.entries(mensalMap).reduce((o,[k,v])=>{ o.labels.push(k); o.data.push(v); return o; },{labels:[],data:[]}),
     topRevisoes, pareto, taxaRevisao, concentracao, taxaRevisaoGlobal,
@@ -861,7 +807,7 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     zScoreHoje, mean30: Math.round(mean30*10)/10, stdDev30: Math.round(stdDev30*10)/10,
     tendenciaSemanalAjustada, forecast7,
     riskMatrix, byVersaoQuality,
-    executiveSummary, actionPriorities,
+    executiveSummary,
   };
 }
 
