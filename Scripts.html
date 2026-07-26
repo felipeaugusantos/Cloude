@@ -776,6 +776,75 @@ function renderRelCharts(ch, r) {
       plugins: { legend: { display: false } },
       scales: { x: { beginAtZero: true, ticks: { display: false }, grid: { display: false } } } }
   });
+
+  // ── Evolução Histórica ───────────────────────────────────────────────────
+  const HIST_COLORS = ['#0d6efd','#198754','#dc3545','#fd7e14','#6610f2'];
+
+  destroyChart('chartTop5Clientes');
+  if (ch.top5Trend && ch.top5Trend.clients && ch.top5Trend.clients.length) {
+    charts.chartTop5Clientes = new Chart(document.getElementById('chartTop5Clientes'), {
+      type: 'line',
+      data: {
+        labels: ch.top5Trend.labels,
+        datasets: ch.top5Trend.clients.map((c, i) => ({
+          label: c.name,
+          data: c.data,
+          borderColor: HIST_COLORS[i % HIST_COLORS.length],
+          backgroundColor: 'transparent',
+          tension: .3, pointRadius: 2, borderWidth: 2,
+        }))
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { font: { size: 10 }, boxWidth: 10 } } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  const STATUS_PALETTE = { Aberta:'#dc3545', Andamento:'#fd7e14', Corrigindo:'#ffc107', Corrigido:'#0dcaf0', Conferido:'#198754' };
+  destroyChart('chartStatusSemanal');
+  if (ch.statusWeekTrend && ch.statusWeekTrend.labels && ch.statusWeekTrend.datasets && ch.statusWeekTrend.datasets.length) {
+    charts.chartStatusSemanal = new Chart(document.getElementById('chartStatusSemanal'), {
+      type: 'bar',
+      data: {
+        labels: ch.statusWeekTrend.labels,
+        datasets: ch.statusWeekTrend.datasets.map((ds, i) => ({
+          label: ds.label,
+          data: ds.data,
+          backgroundColor: STATUS_PALETTE[ds.label] || HIST_COLORS[i % HIST_COLORS.length],
+          borderWidth: 0,
+        }))
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { font: { size: 10 }, boxWidth: 10 } } },
+        scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
+      }
+    });
+  }
+
+  destroyChart('chartVersaoMensal');
+  if (ch.versaoMensalTrend && ch.versaoMensalTrend.versoes && ch.versaoMensalTrend.versoes.length) {
+    charts.chartVersaoMensal = new Chart(document.getElementById('chartVersaoMensal'), {
+      type: 'line',
+      data: {
+        labels: ch.versaoMensalTrend.labels,
+        datasets: ch.versaoMensalTrend.versoes.map((v, i) => ({
+          label: v.name,
+          data: v.data,
+          borderColor: HIST_COLORS[i % HIST_COLORS.length],
+          backgroundColor: 'transparent',
+          tension: .3, pointRadius: 3, borderWidth: 2,
+        }))
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { font: { size: 10 }, boxWidth: 10 } } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
 }
 
 

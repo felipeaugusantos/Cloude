@@ -542,7 +542,72 @@ function buildCharts_(items, today, tz) {
   const trend30 = Object.entries(trend30Raw)
     .reduce((o,[k,v])=>{ o.labels.push(k.substring(5)); o.data.push(v); return o; },{labels:[],data:[]});
 
-  return { cliHoje, versoesHojeMap, cliUltimos7, versoes7Map, trend30, weekMap, top10, cliTotalMap, trend30Raw };
+  // ── Top 5 clientes — volume diário últimos 30 dias ───────────────────
+  const top5CliNames = Object.entries(cliTotalMap).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k])=>k);
+  const cliDayMap    = {};
+  top5CliNames.forEach(n => { cliDayMap[n] = {}; });
+  const trend30Keys  = Object.keys(trend30Raw);
+  items.forEach(r => {
+    if (cliDayMap[r.cliente] !== undefined && trend30Raw[r.dataOrigem] !== undefined)
+      cliDayMap[r.cliente][r.dataOrigem] = (cliDayMap[r.cliente][r.dataOrigem]||0)+1;
+  });
+  const top5Trend = {
+    labels:  trend30Keys.map(k => k.substring(5)),
+    clients: top5CliNames.map(name => ({ name, data: trend30Keys.map(k => cliDayMap[name][k]||0) }))
+  };
+
+  // ── Status por semana — últimas 12 semanas ────────────────────────────
+  const statusTotals_ = {};
+  items.forEach(r => { if (r.status) statusTotals_[r.status] = (statusTotals_[r.status]||0)+1; });
+  const TOP_STATUSES = Object.entries(statusTotals_).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k])=>k);
+  const now_         = new Date();
+  const dow_         = now_.getDay();
+  const thisMonday_  = new Date(now_);
+  thisMonday_.setDate(now_.getDate() + (dow_ === 0 ? -6 : 1 - dow_));
+  thisMonday_.setHours(0,0,0,0);
+  const swLabels = [];
+  const swCounts = {};
+  TOP_STATUSES.forEach(s => { swCounts[s] = []; });
+  for (let w = 11; w >= 0; w--) {
+    const wStart = new Date(thisMonday_);
+    wStart.setDate(thisMonday_.getDate() - w * 7);
+    const wEnd = new Date(wStart);
+    wEnd.setDate(wStart.getDate() + 6);
+    const wsKey = Utilities.formatDate(wStart, tz, "yyyy-MM-dd");
+    const weKey = Utilities.formatDate(wEnd,   tz, "yyyy-MM-dd");
+    swLabels.push(wsKey.substring(5).replace("-","/"));
+    const cnt = {};
+    TOP_STATUSES.forEach(s => { cnt[s] = 0; });
+    items.forEach(r => {
+      if (r.dataOrigem >= wsKey && r.dataOrigem <= weKey && cnt[r.status] !== undefined) cnt[r.status]++;
+    });
+    TOP_STATUSES.forEach(s => { swCounts[s].push(cnt[s]); });
+  }
+  const statusWeekTrend = { labels: swLabels, datasets: TOP_STATUSES.map(s => ({ label: s, data: swCounts[s] })) };
+
+  // ── Top 5 versões — evolução mensal 12 meses ─────────────────────────
+  const mKeys = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+    mKeys.push(Utilities.formatDate(d, tz, "yyyy-MM"));
+  }
+  const versaoTotals_ = {};
+  items.forEach(r => { if (r.versao) versaoTotals_[r.versao] = (versaoTotals_[r.versao]||0)+1; });
+  const top5Versoes = Object.entries(versaoTotals_).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k])=>k);
+  const vMonthMap   = {};
+  mKeys.forEach(mk => { vMonthMap[mk] = {}; });
+  items.forEach(r => {
+    if (!r.dataOrigem || r.dataOrigem.length < 7 || !r.versao) return;
+    const mk = r.dataOrigem.substring(0,7);
+    if (vMonthMap[mk]) vMonthMap[mk][r.versao] = (vMonthMap[mk][r.versao]||0)+1;
+  });
+  const versaoMensalTrend = {
+    labels:  mKeys.map(k => k.substring(5)),
+    versoes: top5Versoes.map(v => ({ name: v, data: mKeys.map(mk => vMonthMap[mk][v]||0) }))
+  };
+
+  return { cliHoje, versoesHojeMap, cliUltimos7, versoes7Map, trend30, weekMap, top10, cliTotalMap, trend30Raw,
+           top5Trend, statusWeekTrend, versaoMensalTrend };
 }
 
 function buildReports_(items, cliTotalMap, trend30Raw, tz) {
@@ -950,13 +1015,16 @@ function getDashboardData(filtersJson) {
     const cards     = buildCards_(items, today, tz);
     const rawCharts = buildCharts_(items, today, tz);
     const charts    = {
-      cliHoje:        rawCharts.cliHoje,
-      cliUltimos7:    rawCharts.cliUltimos7,
-      versoesHojeMap: rawCharts.versoesHojeMap,
-      versoes7Map:    rawCharts.versoes7Map,
-      trend30:        rawCharts.trend30,
-      weekMap:        rawCharts.weekMap,
-      top10:          rawCharts.top10,
+      cliHoje:           rawCharts.cliHoje,
+      cliUltimos7:       rawCharts.cliUltimos7,
+      versoesHojeMap:    rawCharts.versoesHojeMap,
+      versoes7Map:       rawCharts.versoes7Map,
+      trend30:           rawCharts.trend30,
+      weekMap:           rawCharts.weekMap,
+      top10:             rawCharts.top10,
+      top5Trend:         rawCharts.top5Trend,
+      statusWeekTrend:   rawCharts.statusWeekTrend,
+      versaoMensalTrend: rawCharts.versaoMensalTrend,
     };
     const reports    = buildReports_(items, rawCharts.cliTotalMap, rawCharts.trend30Raw, tz);
     const decision   = buildDecision_(items, today, tz, ignoredDecisionClients, filters.decisionPeriod || "30d");

@@ -444,6 +444,43 @@
         </div>
       </div>
 
+
+      <!-- Evolução Histórica — separador -->
+      <div class="d-flex align-items-center gap-2 mt-2 mb-3">
+        <hr class="flex-grow-1 m-0">
+        <span class="text-muted fw-bold" style="font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap">Evolução Histórica</span>
+        <hr class="flex-grow-1 m-0">
+      </div>
+
+      <!-- Top 5 clientes diário — full width -->
+      <div class="row g-3 mb-3">
+        <div class="col-12">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top"
+            title="Volume diário de cópias dos 5 clientes mais ativos nos últimos 30 dias — mostra quem está crescendo ou desacelerando.">
+            <h6 class="card-title text-muted mb-2">Top 5 Clientes — Evolução Diária (30 dias)</h6>
+            <div style="height:200px"><canvas id="chartTop5Clientes"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status semanal + Versão mensal -->
+      <div class="row g-3">
+        <div class="col-md-7">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top"
+            title="Distribuição de cópias por status agrupada por semana nas últimas 12 semanas — revela se o backlog de pendentes está crescendo ou sendo absorvido.">
+            <h6 class="card-title text-muted mb-2">Composição por Status — Últimas 12 Semanas</h6>
+            <div style="height:220px"><canvas id="chartStatusSemanal"></canvas></div>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <div class="card chart-card p-3" data-bs-toggle="tooltip" data-bs-placement="top"
+            title="Volume mensal das 5 versões com maior histórico de cópias nos últimos 12 meses — identifica versões em alta ou em declínio.">
+            <h6 class="card-title text-muted mb-2">Top 5 Versões — Evolução Mensal (12 meses)</h6>
+            <div style="height:220px"><canvas id="chartVersaoMensal"></canvas></div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /tabRel -->
 
     <!-- ══ TAB DECISÃO ════════════════════════════════════════════════════ -->
