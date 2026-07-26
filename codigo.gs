@@ -1445,6 +1445,103 @@ function getKPITrendData() {
   }
 }
 
+function getHistoricalCharts() {
+  try {
+    assertAuthorized_("getHistoricalCharts");
+    const cache    = CacheService.getScriptCache();
+    const cacheKey = "hist_charts_v1";
+    const cached   = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const ss    = getSpreadsheet_();
+    const tz    = ss.getSpreadsheetTimeZone();
+    const items = buildAllItems(ss); // histórico completo — sem filtros
+
+    // cliTotalMap
+    const cliTotalMap = {};
+    items.forEach(r => { cliTotalMap[r.cliente] = (cliTotalMap[r.cliente]||0)+1; });
+
+    // trend30Raw — últimos 30 dias
+    const trend30Raw = {};
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      trend30Raw[Utilities.formatDate(d, tz, "yyyy-MM-dd")] = 0;
+    }
+    items.forEach(r => { if (trend30Raw[r.dataOrigem] !== undefined) trend30Raw[r.dataOrigem]++; });
+    const trend30Keys = Object.keys(trend30Raw);
+
+    // Top 5 clientes — evolução diária 30 dias
+    const top5CliNames = Object.entries(cliTotalMap).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k])=>k);
+    const cliDayMap    = {};
+    top5CliNames.forEach(n => { cliDayMap[n] = {}; });
+    items.forEach(r => {
+      if (cliDayMap[r.cliente] !== undefined && trend30Raw[r.dataOrigem] !== undefined)
+        cliDayMap[r.cliente][r.dataOrigem] = (cliDayMap[r.cliente][r.dataOrigem]||0)+1;
+    });
+    const top5Trend = {
+      labels:  trend30Keys.map(k => k.substring(5)),
+      clients: top5CliNames.map(name => ({ name, data: trend30Keys.map(k => cliDayMap[name][k]||0) }))
+    };
+
+    // Status por semana — últimas 12 semanas
+    const statusTotals = {};
+    items.forEach(r => { if (r.status) statusTotals[r.status] = (statusTotals[r.status]||0)+1; });
+    const TOP_STATUSES = Object.entries(statusTotals).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k])=>k);
+    const now_         = new Date();
+    const dow_         = now_.getDay();
+    const thisMonday_  = new Date(now_);
+    thisMonday_.setDate(now_.getDate() + (dow_ === 0 ? -6 : 1 - dow_));
+    thisMonday_.setHours(0,0,0,0);
+    const swLabels = [];
+    const swCounts = {};
+    TOP_STATUSES.forEach(s => { swCounts[s] = []; });
+    for (let w = 11; w >= 0; w--) {
+      const wStart = new Date(thisMonday_);
+      wStart.setDate(thisMonday_.getDate() - w * 7);
+      const wEnd = new Date(wStart);
+      wEnd.setDate(wStart.getDate() + 6);
+      const wsKey = Utilities.formatDate(wStart, tz, "yyyy-MM-dd");
+      const weKey = Utilities.formatDate(wEnd,   tz, "yyyy-MM-dd");
+      swLabels.push(wsKey.substring(5).replace("-","/"));
+      const cnt = {};
+      TOP_STATUSES.forEach(s => { cnt[s] = 0; });
+      items.forEach(r => {
+        if (r.dataOrigem >= wsKey && r.dataOrigem <= weKey && cnt[r.status] !== undefined) cnt[r.status]++;
+      });
+      TOP_STATUSES.forEach(s => { swCounts[s].push(cnt[s]); });
+    }
+    const statusWeekTrend = { labels: swLabels, datasets: TOP_STATUSES.map(s => ({ label: s, data: swCounts[s] })) };
+
+    // Top 5 versões — evolução mensal 12 meses
+    const mKeys = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+      mKeys.push(Utilities.formatDate(d, tz, "yyyy-MM"));
+    }
+    const versaoTotals = {};
+    items.forEach(r => { if (r.versao) versaoTotals[r.versao] = (versaoTotals[r.versao]||0)+1; });
+    const top5Versoes = Object.entries(versaoTotals).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k])=>k);
+    const vMonthMap   = {};
+    mKeys.forEach(mk => { vMonthMap[mk] = {}; });
+    items.forEach(r => {
+      if (!r.dataOrigem || r.dataOrigem.length < 7 || !r.versao) return;
+      const mk = r.dataOrigem.substring(0,7);
+      if (vMonthMap[mk]) vMonthMap[mk][r.versao] = (vMonthMap[mk][r.versao]||0)+1;
+    });
+    const versaoMensalTrend = {
+      labels:  mKeys.map(k => k.substring(5)),
+      versoes: top5Versoes.map(v => ({ name: v, data: mKeys.map(mk => vMonthMap[mk][v]||0) }))
+    };
+
+    const result = { ok: true, top5Trend, statusWeekTrend, versaoMensalTrend };
+    cache.put(cacheKey, JSON.stringify(result), 300);
+    return result;
+  } catch(e) {
+    logEvent_("ERROR", "SISTEMA", "getHistoricalCharts", "Erro ao calcular gráficos históricos", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 function exportKPICSV() {
   try {
     assertAuthorized_("exportKPICSV");
