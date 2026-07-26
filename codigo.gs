@@ -549,8 +549,14 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
   const sortedCli = Object.entries(cliTotalMap).sort((a,b)=>b[1]-a[1]).slice(0,15);
   const pareto    = sortedCli.reduce((o,[k,v])=>{ o.labels.push(k); o.data.push(v); return o; },{labels:[],data:[]});
   let acc = 0;
-  const totalP = pareto.data.reduce((a,b)=>a+b,0);
+  // totalP usa TODOS os clientes, não apenas os top 15, para que o acumulado reflita
+  // a participação real no volume total — caso contrário sempre fecha em 100%.
+  const totalP = Object.values(cliTotalMap).reduce((a,b)=>a+b,0);
   pareto.cumulative = pareto.data.map(v => { acc += v; return totalP ? Math.round(acc*100/totalP) : 0; });
+  let pacc = 0, pareto80count = 0;
+  for (const v of pareto.data) { pacc += v; pareto80count++; if (totalP && pacc/totalP >= 0.8) break; }
+  pareto.pareto80count  = pareto80count;
+  pareto.totalClientes  = Object.keys(cliTotalMap).length;
 
   const cliRevMap = {};
   items.forEach(r => {

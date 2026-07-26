@@ -610,7 +610,11 @@ function renderRelCharts(ch, r) {
   }
   const insPareto = document.getElementById('insightPareto');
   if (insPareto) {
-    insPareto.textContent = r.concentracao ? 'Os 3 maiores clientes concentram ' + r.concentracao + '% do volume.' : '';
+    const p80 = r.pareto && r.pareto.pareto80count;
+    const pTot = r.pareto && r.pareto.totalClientes;
+    insPareto.textContent = p80 && pTot
+      ? p80 + ' de ' + pTot + ' cliente' + (pTot > 1 ? 's' : '') + ' concentram 80% do volume total.'
+      : (r.concentracao ? 'Os 3 maiores clientes concentram ' + r.concentracao + '% do volume.' : '');
   }
 
   destroyChart('chartMensal');
