@@ -41,7 +41,7 @@ body{
 #globalLoader .spinner-border{width:3rem;height:3rem}
 
 /* KPI Alert */
-#kpiAlert{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:9000;min-width:360px;border-radius:0 0 .5rem .5rem;display:none;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+#kpiAlert{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:9000;min-width:360px;max-width:calc(100vw - 1rem);width:max-content;border-radius:0 0 .5rem .5rem;display:none;box-shadow:0 4px 12px rgba(0,0,0,.2)}
 #kpiAlert.show{display:flex!important}
 
 /* System message */
@@ -78,6 +78,7 @@ body{
   color:#fff;
   background:linear-gradient(135deg,#2454d6,#1743b5);
   box-shadow:0 8px 18px rgba(36,84,214,.24);
+  font-weight:700;
 }
 .dashboard-tab-content{min-height:560px;transition:opacity .16s ease,transform .16s ease}
 .dashboard-tab-content.tab-switching{opacity:.45;transform:translateY(4px)}
@@ -95,7 +96,7 @@ body{
 .btn-primary{background:var(--dash-accent);border-color:var(--dash-accent);box-shadow:0 4px 12px rgba(36,84,214,.18)}
 
 /* Table */
-.table-container{max-height:520px;overflow-y:auto;border-radius:0 0 12px 12px}
+.table-container{max-height:520px;overflow-y:auto;overflow-x:auto;border-radius:0 0 12px 12px}
 .table{--bs-table-hover-bg:#f8fbff}
 .table thead th{position:sticky;top:0;background:#202939;color:#fff;white-space:nowrap;cursor:pointer;user-select:none;border-bottom:0;font-size:.76rem;text-transform:uppercase;letter-spacing:.04em}
 .table thead th:hover{background:#344054}
@@ -258,7 +259,7 @@ tr.sem-caminho-row:hover td{background:#ffd0d0 !important}
 .sem-vermelho{background:#f8d7da;color:#58151c;border-radius:6px;padding:2px 8px;font-weight:600;font-size:.75rem}
 .sem-cinza{background:#e2e3e5;color:#41464b;border-radius:6px;padding:2px 8px;font-weight:600;font-size:.75rem}
 .progress{height:8px;border-radius:4px}
-tfoot tr td{font-weight:700;background:#202939 !important;color:#fff !important}
+#kpiTFoot tr td{font-weight:700;background:#202939 !important;color:#fff !important}
 .session-item{cursor:pointer;padding:.4rem .75rem;border-radius:6px;font-size:.8rem;transition:background .15s;display:flex;justify-content:space-between;align-items:center}
 .session-item:hover{background:#eef4ff}
 .session-item.active{background:var(--dash-accent);color:#fff;box-shadow:0 6px 16px rgba(36,84,214,.22)}
@@ -275,5 +276,11 @@ tfoot tr td{font-weight:700;background:#202939 !important;color:#fff !important}
 @media (max-width:768px){
   .dashboard-tabs{position:static}
   .dashboard-header{border-radius:12px}
+}
+@media (prefers-reduced-motion: reduce){
+  .dashboard-tab-content{transition:none}
+  .dashboard-tab-content.tab-switching{opacity:1;transform:none}
+  .dashboard-tab-content .tab-pane.show.active{animation:none}
+  .card-metric{transition:none}
 }
 </style>

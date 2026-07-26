@@ -69,7 +69,10 @@ document.addEventListener('DOMContentLoaded', () => {
   try { checkAdminContext(); } catch(e) {}  // falha silenciosa se getAdminContext não existir no backend
   fetchData();
   startKPIReminder();
-  setInterval(fetchData, 5 * 60 * 1000);
+  setInterval(autoRefresh, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && Date.now() - (window._lastFetchTime || 0) > 4 * 60 * 1000) autoRefresh();
+  });
 });
 
 function initCardTooltips() {
@@ -110,7 +113,15 @@ function resetLoader() {
 
 function fetchData() {
   currentPage = 1;
+  window._lastFetchTime = Date.now();
   resetLoader();
+  loadDashboard(withDecisionPeriod(currentFilters));
+}
+
+function autoRefresh() {
+  if (document.visibilityState !== 'visible') return;
+  if (currentPage > 1) return; // não interrompe quem está paginando
+  window._lastFetchTime = Date.now();
   loadDashboard(withDecisionPeriod(currentFilters));
 }
 
@@ -167,6 +178,8 @@ function clearFilters() {
     const el = document.getElementById(id);
     if (el) el.tagName === 'SELECT' ? (el.selectedIndex = 0) : (el.value = '');
   });
+  sortState = { campo: 'dataOrigem', dir: 'desc' };
+  updateSortIcons();
   applyFilter();
 }
 
@@ -197,7 +210,7 @@ function renderAll(resp) {
   setText('cSemCaminho', c.semCaminho + (c.semCaminhoPerc != null ? ' (' + c.semCaminhoPerc + '%)' : ''));
   const scBadge = document.getElementById('cSemCaminhoStatus');
   if (scBadge) {
-    const scSt = (c.semCaminhoPerc||0) >= 10 ? 'Crítico' : (c.semCaminhoPerc||0) >= 5 ? 'Atenção' : 'Normal';
+    const scSt = classifySemCaminho(c.semCaminhoPerc || 0);
     scBadge.textContent = scSt;
     scBadge.style.display = scSt !== 'Normal' ? '' : 'none';
   }
@@ -252,6 +265,9 @@ function renderAll(resp) {
   tableRows = resp.table.rows;
   renderPaginacao(resp.table.page, resp.table.totalPages);
   document.getElementById('tableCount').textContent = '(' + resp.table.totalRows + ' registros)';
+  const _fc = [currentFilters.cliente, currentFilters.dataInicio, currentFilters.dataFim, currentFilters.versao, currentFilters.revisao, currentFilters.requisito, currentFilters.status].filter(Boolean).length;
+  const _fb = document.getElementById('activeFilterBadge');
+  if (_fb) { _fb.textContent = _fc ? _fc + ' filtro' + (_fc > 1 ? 's' : '') + ' ativo' + (_fc > 1 ? 's' : '') : ''; _fb.style.display = _fc ? '' : 'none'; }
   updateSortIcons();
 }
 
@@ -259,6 +275,25 @@ function riskClass(level) {
   if (level === 'Crítico') return 'danger';
   if (level === 'Atenção') return 'warning';
   return 'success';
+}
+function classifySemCaminho(perc) {
+  return perc >= 10 ? 'Crítico' : perc >= 5 ? 'Atenção' : 'Normal';
+}
+const TOTAL_ROW_KEY = TOTAL_ROW_KEY;
+function setPreset(p) {
+  const today = new Date().toISOString().substring(0, 10);
+  const de = document.getElementById('fDe'), ate = document.getElementById('fAte');
+  if (!de || !ate) return;
+  if (p === 'hoje') { de.value = today; ate.value = today; }
+  else if (p === '7d') {
+    const d7 = new Date(); d7.setDate(d7.getDate() - 6);
+    de.value = d7.toISOString().substring(0, 10); ate.value = today;
+  } else if (p === 'mes') {
+    const now = new Date();
+    de.value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
+    ate.value = today;
+  }
+  applyFilter();
 }
 
 function renderDecision(d) {
@@ -578,7 +613,7 @@ function renderRelCharts(ch, r) {
   document.getElementById('rSemCaminho').textContent = r.semCaminhoCount + ' (' + r.semCaminhoPerc + '%)';
   const scEl = document.getElementById('rSemCaminhoStatus');
   if (scEl) {
-    const scStatus = r.semCaminhoPerc >= 10 ? 'Crítico' : r.semCaminhoPerc >= 5 ? 'Atenção' : 'Normal';
+    const scStatus = classifySemCaminho(r.semCaminhoPerc);
     scEl.textContent = scStatus;
     scEl.className = 'badge mt-1 bg-light text-dark';
     scEl.style.display = scStatus !== 'Normal' ? '' : 'none';
@@ -629,8 +664,8 @@ function renderRelCharts(ch, r) {
 
   const fcEl = document.getElementById('rForecast7');
   if (fcEl) {
-    const fc = r.forecast7 != null ? r.forecast7 : 0;
-    fcEl.textContent = fc ? '~' + fc + '/dia' : '— /dia';
+    const fc = r.forecast7 != null ? r.forecast7 : null;
+    fcEl.textContent = fc != null ? (fc > 0 ? '~' + fc + '/dia' : fc + '/dia') : '— /dia';
   }
   setCtx('rForecast7Ctx', r.forecast7 ? 'Baseado nos últimos 30 dias' : '');
 
@@ -769,7 +804,7 @@ function calcTrendLine(y) {
   const d = n*sxx - sx*sx;
   if (!d) return y.map(()=>sy/n);
   const m = (n*sxy-sx*sy)/d, b = (sy-m*sx)/n;
-  return y.map((_,i)=>Math.max(0,Math.round(m*i+b)));
+  return y.map((_,i)=>Math.round(m*i+b));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -886,11 +921,13 @@ function buildMsg(r) {
 }
 
 function copyMsg(idx) {
-  navigator.clipboard.writeText(buildMsg(tableRows[idx])).then(showToast).catch(() => {});
+  navigator.clipboard.writeText(buildMsg(tableRows[idx])).then(showToast)
+    .catch(() => showSystemMsg('warning', 'Não foi possível copiar — tente manualmente.'));
 }
 function copyMsgFromModal() {
   if (!selectedRow) return;
-  navigator.clipboard.writeText(buildMsg(selectedRow)).then(showToast).catch(() => {});
+  navigator.clipboard.writeText(buildMsg(selectedRow)).then(showToast)
+    .catch(() => showSystemMsg('warning', 'Não foi possível copiar — tente manualmente.'));
 }
 function showToast() {
   new bootstrap.Toast(document.getElementById('copyToast'), { delay: 2500 }).show();
@@ -998,7 +1035,7 @@ function viewSessionEl(el) {
 }
 
 function updateKpiSummaryCards(data) {
-  const tg = data.find(r => r.ALT_VERSAO === 'TOTAL GERAL');
+  const tg = data.find(r => r.ALT_VERSAO === TOTAL_ROW_KEY);
   if (!tg) return;
   document.getElementById('kpiTotal').textContent     = tg.TOTAL || '—';
   document.getElementById('kpiConferido').textContent = (tg.KPI_CONFERIDO != null ? tg.KPI_CONFERIDO.toFixed(1) : '—') + '%';
@@ -1007,8 +1044,8 @@ function updateKpiSummaryCards(data) {
 }
 
 function renderKPITableData(data) {
-  const version_rows = data.filter(r => r.ALT_VERSAO !== 'TOTAL GERAL');
-  const total_row    = data.find(r => r.ALT_VERSAO === 'TOTAL GERAL');
+  const version_rows = data.filter(r => r.ALT_VERSAO !== TOTAL_ROW_KEY);
+  const total_row    = data.find(r => r.ALT_VERSAO === TOTAL_ROW_KEY);
   const tbody = document.getElementById('kpiTBody');
   const tfoot = document.getElementById('kpiTFoot');
 
@@ -1041,7 +1078,7 @@ function renderKPITableData(data) {
 
 function renderKPIStackChart(data) {
   destroyChart('chartKpiStack');
-  const rows = data.filter(r => r.ALT_VERSAO !== 'TOTAL GERAL');
+  const rows = data.filter(r => r.ALT_VERSAO !== TOTAL_ROW_KEY);
   if (!rows.length) return;
   charts.chartKpiStack = new Chart(document.getElementById('chartKpiStack'), {
     type: 'bar',
@@ -1147,7 +1184,7 @@ function validarJSON() {
   headEl.innerHTML = ''; bodyEl.innerHTML = '';
   btnConf.disabled = true;
 
-  if (!raw) { alert('Cole o JSON antes de validar.'); return; }
+  if (!raw) { showSystemMsg('warning', 'Cole o JSON antes de validar.'); return; }
 
   let data;
   try { data = JSON.parse(raw); }
@@ -1354,7 +1391,11 @@ function copiarRelatorioChat() {
 function startKPIReminder() {
   kpiAlertTimer = setInterval(mostrarAlertaKPI, INTERVALO_ALERTA);
 }
-function mostrarAlertaKPI() { document.getElementById('kpiAlert').classList.add('show'); }
+function mostrarAlertaKPI() {
+  const d = new Date(), h = d.getHours(), wd = d.getDay();
+  if (wd === 0 || wd === 6 || h < 7 || h >= 19) return;
+  document.getElementById('kpiAlert').classList.add('show');
+}
 function dispensarAlerta() {
   document.getElementById('kpiAlert').classList.remove('show');
   clearInterval(kpiAlertTimer);
