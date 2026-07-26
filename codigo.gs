@@ -643,13 +643,6 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     tendenciaSemanalAjustada = weekdayAvg ? Math.round((todayCount-weekdayAvg)*100/weekdayAvg) : (todayCount>0?100:0);
   }
 
-  // Mapa diário por cliente — base para z-score individual e tendência semanal por cliente
-  const cliDailyMap = {};
-  items.forEach(r => {
-    if (!cliDailyMap[r.cliente]) cliDailyMap[r.cliente] = {};
-    cliDailyMap[r.cliente][r.dataOrigem] = (cliDailyMap[r.cliente][r.dataOrigem] || 0) + 1;
-  });
-
   // Matriz de risco por cliente: combina volume, % sem caminho e taxa de revisão num score único,
   // classificado por percentil (adaptativo à própria distribuição dos clientes filtrados)
   const cliSemCaminhoMap = {};
@@ -694,29 +687,6 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     }
     r.status = status;
     r.reason = reason;
-
-    // Z-score individual do cliente (volume de hoje vs. média 30d do mesmo cliente)
-    const cliDays = cliDailyMap[r.cliente] || {};
-    const cliVals = Object.values(cliDays);
-    const cliN    = cliVals.length;
-    const cliMean = cliN ? cliVals.reduce((a,b)=>a+b,0)/cliN : 0;
-    const cliVar  = cliN ? cliVals.reduce((a,b)=>a+Math.pow(b-cliMean,2),0)/cliN : 0;
-    const cliStd  = Math.sqrt(cliVar);
-    r.zScoreCliente = cliStd ? Math.round((((cliDays[todayKey]||0) - cliMean) / cliStd)*100)/100 : 0;
-
-    // Tendência semanal por cliente (últimos 7 dias vs. 7 dias anteriores)
-    let cliSumU7 = 0, cliSumA7 = 0;
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(hojeData); d.setDate(d.getDate() - i);
-      cliSumU7 += cliDays[Utilities.formatDate(d, tz, "yyyy-MM-dd")] || 0;
-    }
-    for (let i = 7; i < 14; i++) {
-      const d = new Date(hojeData); d.setDate(d.getDate() - i);
-      cliSumA7 += cliDays[Utilities.formatDate(d, tz, "yyyy-MM-dd")] || 0;
-    }
-    r.tendenciaCliente = cliSumA7 > 0
-      ? Math.round((cliSumU7 - cliSumA7) * 100 / cliSumA7)
-      : (cliSumU7 > 0 ? 100 : 0);
   });
   const riskMatrix = riskMatrixRaw.sort((a,b)=>b.score-a.score).slice(0,10);
 
@@ -806,7 +776,6 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     mesAtualKey, mesAtualTotal, mesAnteriorTotal, variacaoMensal,
     zScoreHoje, mean30: Math.round(mean30*10)/10, stdDev30: Math.round(stdDev30*10)/10,
     tendenciaSemanalAjustada, forecast7,
-    riskMatrix, byVersaoQuality,
     executiveSummary,
   };
 }
