@@ -150,6 +150,7 @@ function applyFilter() {
     versao:     document.getElementById('fVersao').value,
     revisao:    document.getElementById('fRevisao').value,
     requisito:  document.getElementById('fRequisito').value,
+    status:     (document.getElementById('fStatus') || {}).value || '',
     sortCampo:  sortState.campo,
     sortDir:    sortState.dir,
   };
@@ -162,9 +163,9 @@ function scheduleFilter() {
 }
 
 function clearFilters() {
-  ['fCliente','fDe','fAte','fVersao','fRevisao','fRequisito'].forEach(id => {
+  ['fCliente','fDe','fAte','fVersao','fRevisao','fRequisito','fStatus'].forEach(id => {
     const el = document.getElementById(id);
-    el.tagName === 'SELECT' ? (el.selectedIndex = 0) : (el.value = '');
+    if (el) el.tagName === 'SELECT' ? (el.selectedIndex = 0) : (el.value = '');
   });
   applyFilter();
 }
@@ -193,8 +194,19 @@ function renderAll(resp) {
   const c = resp.cards;
   setText('cTotal',      c.total);
   setText('cHoje',       c.hoje);
-  setText('cSemCaminho', c.semCaminho);
-  setText('cMedia7',     c.media7d);
+  setText('cSemCaminho', c.semCaminho + (c.semCaminhoPerc != null ? ' (' + c.semCaminhoPerc + '%)' : ''));
+  const scBadge = document.getElementById('cSemCaminhoStatus');
+  if (scBadge) {
+    const scSt = (c.semCaminhoPerc||0) >= 10 ? 'Crítico' : (c.semCaminhoPerc||0) >= 5 ? 'Atenção' : 'Normal';
+    scBadge.textContent = scSt;
+    scBadge.style.display = scSt !== 'Normal' ? '' : 'none';
+  }
+  setText('cMedia7',  c.media7d);
+  const m7t = document.getElementById('cMedia7Trend');
+  if (m7t) {
+    const t = c.tendencia7vs30 || 0;
+    m7t.textContent = t > 0 ? '▲ +' + t + '% vs. média 30d' : t < 0 ? '▼ ' + t + '% vs. média 30d' : '= igual à média 30d';
+  }
   setText('cMedia30',    c.media30d);
   setText('cClientes',   c.clientes);
   const aguardandoEl = document.getElementById('cAguardando');
@@ -204,6 +216,18 @@ function renderAll(resp) {
     if (resp.meta.truncated) {
       showSystemMsg('warning', '⚠️ Resultado truncado — ' + (resp.meta.descartadas || 0) + ' registro(s) com data inválida foram descartados da análise.');
     }
+  }
+
+  const statusSel = document.getElementById('fStatus');
+  if (statusSel) {
+    const curSt = statusSel.value;
+    statusSel.innerHTML = '<option value="">Todos</option>';
+    (resp.statusList || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s; opt.textContent = s;
+      if (s === curSt) opt.selected = true;
+      statusSel.appendChild(opt);
+    });
   }
 
   ['fCliente', 'rFCliente', 'decisionIgnoreSelect'].forEach(id => {
@@ -388,24 +412,35 @@ function renderDashCharts(ch) {
   destroyChart('chartVersoesHoje');
   document.querySelectorAll('.no-data-msg').forEach(el => el.remove());
 
-  if (ch.cliHoje.labels.length) {
+  const useHoje = ch.cliHoje && ch.cliHoje.labels.length > 0;
+  const periodoLabel = useHoje ? 'Hoje' : 'Últimos 7 Dias';
+  const cliData = useHoje ? ch.cliHoje : (ch.cliUltimos7 || {labels:[],data:[]});
+  const cliTitleEl = document.getElementById('chartCliHojeTitulo');
+  if (cliTitleEl) cliTitleEl.textContent = 'Clientes — ' + periodoLabel;
+
+  if (cliData.labels.length) {
     charts.chartCliHoje = new Chart(document.getElementById('chartCliHoje'), {
       type: 'bar',
-      data: { labels: ch.cliHoje.labels, datasets: [{ data: ch.cliHoje.data, backgroundColor: '#0d6efd', borderRadius: 4 }] },
+      data: { labels: cliData.labels, datasets: [{ data: cliData.data, backgroundColor: '#0d6efd', borderRadius: 4 }] },
       options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
     });
   } else {
     const p = document.createElement('p');
     p.className = 'text-muted small text-center mt-3 no-data-msg';
-    p.textContent = 'Nenhum dado hoje';
+    p.textContent = 'Sem dados no período';
     document.getElementById('chartCliHoje').parentElement.appendChild(p);
   }
 
-  const vEntries  = Object.entries(ch.versoesHojeMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  const totalHoje = vEntries.reduce((s,[,v])=>s+v, 0);
+  const vMap    = useHoje ? ch.versoesHojeMap : (ch.versoes7Map || {});
+  const vEntries = Object.entries(vMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const totalV   = vEntries.reduce((s,[,v])=>s+v, 0);
+  const vTitleEl = document.getElementById('chartVersoesHojeTitulo');
+  if (vTitleEl) {
+    vTitleEl.childNodes[0].nodeValue = 'Versões — ' + periodoLabel + ' ';
+  }
   const vEl = document.getElementById('versoesTotalHoje');
-  if (vEl) vEl.textContent = totalHoje ? '(' + totalHoje + ' cópias)' : '';
+  if (vEl) vEl.textContent = totalV ? '(' + totalV + ' cópias)' : '';
 
   if (vEntries.length) {
     const colors = ['#0d6efd','#6610f2','#198754','#fd7e14','#dc3545','#0dcaf0','#20c997','#ffc107','#6f42c1','#d63384'];
@@ -418,14 +453,14 @@ function renderDashCharts(ch) {
       options: {
         indexAxis: 'y', responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false },
-          tooltip: { callbacks: { label: ctx => ' ' + ctx.raw + ' cópia(s)  —  ' + (totalHoje ? Math.round(ctx.raw*100/totalHoje) : 0) + '%' } } },
+          tooltip: { callbacks: { label: ctx => ' ' + ctx.raw + ' cópia(s)  —  ' + (totalV ? Math.round(ctx.raw*100/totalV) : 0) + '%' } } },
         scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } }, y: { ticks: { font: { size: 11 } } } }
       }
     });
   } else {
     const p = document.createElement('p');
     p.className = 'text-muted small text-center mt-3 no-data-msg';
-    p.textContent = 'Nenhuma versão hoje';
+    p.textContent = 'Sem versões no período';
     document.getElementById('chartVersoesHoje').parentElement.appendChild(p);
   }
 }

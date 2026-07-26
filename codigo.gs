@@ -450,6 +450,7 @@ function applyFilters(items, filters) {
     if (filters.versao     && !r.versao.toLowerCase().includes(filters.versao.toLowerCase()))       return false;
     if (filters.revisao    && !r.revisao.toLowerCase().includes(filters.revisao.toLowerCase()))     return false;
     if (filters.requisito  && !r.requisito.toLowerCase().includes(filters.requisito.toLowerCase())) return false;
+    if (filters.status     && r.status !== filters.status)                                           return false;
     return true;
   });
 }
@@ -469,6 +470,7 @@ function buildCards_(items, today, tz) {
   const total      = items.length;
   const hoje       = items.filter(r => r.dataOrigem === today).length;
   const semCaminho = items.filter(r => !r.caminho || !r.caminho.trim()).length;
+  const semCaminhoPerc = total ? Math.round(semCaminho*100/total) : 0;
 
   function mediaUltimosNDias(n) {
     const days = {};
@@ -478,13 +480,16 @@ function buildCards_(items, today, tz) {
     }
     items.forEach(r => { if (days[r.dataOrigem] !== undefined) days[r.dataOrigem]++; });
     const vals = Object.values(days);
-    return vals.length ? (vals.reduce((a,b)=>a+b,0) / vals.length).toFixed(1) : "0.0";
+    return vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : 0;
   }
 
+  const m7raw  = mediaUltimosNDias(7);
+  const m30raw = mediaUltimosNDias(30);
+  const tendencia7vs30 = m30raw > 0 ? Math.round((m7raw - m30raw)*100/m30raw) : (m7raw > 0 ? 100 : 0);
+
   return {
-    total, hoje, semCaminho,
-    media7d:  mediaUltimosNDias(7),
-    media30d: mediaUltimosNDias(30),
+    total, hoje, semCaminho, semCaminhoPerc,
+    media7d: m7raw.toFixed(1), media30d: m30raw.toFixed(1), tendencia7vs30,
     clientes: new Set(items.map(r => r.cliente).filter(Boolean)).size,
   };
 }
@@ -500,6 +505,18 @@ function buildCharts_(items, today, tz) {
 
   const versoesHojeMap = {};
   hojeItems.forEach(r => { versoesHojeMap[r.versao] = (versoesHojeMap[r.versao]||0)+1; });
+
+  // Fallback: últimos 7 dias (usado quando não há dados do dia atual)
+  const ultimos7Keys = new Set();
+  for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate()-i); ultimos7Keys.add(Utilities.formatDate(d, tz, "yyyy-MM-dd")); }
+  const cli7Map = {}, versoes7Map = {};
+  items.filter(r => ultimos7Keys.has(r.dataOrigem)).forEach(r => {
+    cli7Map[r.cliente] = (cli7Map[r.cliente]||0)+1;
+    versoes7Map[r.versao] = (versoes7Map[r.versao]||0)+1;
+  });
+  const cliUltimos7 = Object.entries(cli7Map)
+    .sort((a,b)=>b[1]-a[1]).slice(0,10)
+    .reduce((o,[k,v])=>{ o.labels.push(k); o.data.push(v); return o; },{labels:[],data:[]});
 
   const trend30Raw = {};
   for (let i = 29; i >= 0; i--) {
@@ -525,7 +542,7 @@ function buildCharts_(items, today, tz) {
   const trend30 = Object.entries(trend30Raw)
     .reduce((o,[k,v])=>{ o.labels.push(k.substring(5)); o.data.push(v); return o; },{labels:[],data:[]});
 
-  return { cliHoje, versoesHojeMap, trend30, weekMap, top10, cliTotalMap, trend30Raw };
+  return { cliHoje, versoesHojeMap, cliUltimos7, versoes7Map, trend30, weekMap, top10, cliTotalMap, trend30Raw };
 }
 
 function buildReports_(items, cliTotalMap, trend30Raw, tz) {
@@ -934,7 +951,9 @@ function getDashboardData(filtersJson) {
     const rawCharts = buildCharts_(items, today, tz);
     const charts    = {
       cliHoje:        rawCharts.cliHoje,
+      cliUltimos7:    rawCharts.cliUltimos7,
       versoesHojeMap: rawCharts.versoesHojeMap,
+      versoes7Map:    rawCharts.versoes7Map,
       trend30:        rawCharts.trend30,
       weekMap:        rawCharts.weekMap,
       top10:          rawCharts.top10,
@@ -942,6 +961,7 @@ function getDashboardData(filtersJson) {
     const reports    = buildReports_(items, rawCharts.cliTotalMap, rawCharts.trend30Raw, tz);
     const decision   = buildDecision_(items, today, tz, ignoredDecisionClients, filters.decisionPeriod || "30d");
     const clientList = [...new Set(allItems.map(r => r.cliente).filter(Boolean))].sort();
+    const statusList = [...new Set(allItems.map(r => r.status).filter(Boolean))].sort();
     const sortCampo  = filters.sortCampo || "dataOrigem";
     const sortDir    = filters.sortDir   || "desc";
     const sorted     = applySort(items, sortCampo, sortDir);
@@ -951,7 +971,7 @@ function getDashboardData(filtersJson) {
     const response = {
       ok: true, cards, charts, reports, decision,
       table: { rows: pageRows, totalPages, totalRows: sorted.length, page: 1 },
-      clientList,
+      clientList, statusList,
     };
     cache.put(cacheKey, JSON.stringify(response), CONFIG.CACHE_SECONDS);
     return response;

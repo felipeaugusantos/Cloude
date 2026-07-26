@@ -127,12 +127,14 @@
           <div class="card card-metric bg-danger text-white p-3">
             <div class="value" id="cSemCaminho">—</div>
             <div class="label">Sem Caminho</div>
+            <div class="badge mt-1 bg-light text-dark" id="cSemCaminhoStatus" style="display:none"></div>
           </div>
         </div>
         <div class="col-6 col-md-4 col-xl-2">
           <div class="card card-metric bg-success text-white p-3">
             <div class="value" id="cMedia7">—</div>
             <div class="label">Média 7 Dias</div>
+            <div style="font-size:.7rem;opacity:.85;margin-top:.2rem" id="cMedia7Trend"></div>
           </div>
         </div>
         <div class="col-6 col-md-4 col-xl-2">
@@ -179,6 +181,12 @@
               <label class="form-label form-label-sm mb-1">Requisito</label>
               <input type="text" id="fRequisito" class="form-control form-control-sm" placeholder="Filtrar..." oninput="scheduleFilter()">
             </div>
+            <div class="col-sm-2">
+              <label class="form-label form-label-sm mb-1">Status</label>
+              <select id="fStatus" class="form-select form-select-sm" onchange="applyFilter()">
+                <option value="">Todos</option>
+              </select>
+            </div>
             <div class="col-sm-auto">
               <button class="btn btn-outline-secondary btn-sm" onclick="clearFilters()">Limpar</button>
             </div>
@@ -190,13 +198,13 @@
       <div class="row g-3 mb-3">
         <div class="col-md-6">
           <div class="card chart-card p-3">
-            <h6 class="card-title text-muted mb-2">Clientes — Hoje</h6>
+            <h6 class="card-title text-muted mb-2" id="chartCliHojeTitulo">Clientes — Hoje</h6>
             <div style="height:220px"><canvas id="chartCliHoje"></canvas></div>
           </div>
         </div>
         <div class="col-md-6">
           <div class="card chart-card p-3">
-            <h6 class="card-title text-muted mb-2">Versões — Hoje <small class="text-muted fw-normal" id="versoesTotalHoje"></small></h6>
+            <h6 class="card-title text-muted mb-2" id="chartVersoesHojeTitulo">Versões — Hoje <small class="text-muted fw-normal" id="versoesTotalHoje"></small></h6>
             <div style="height:220px"><canvas id="chartVersoesHoje"></canvas></div>
           </div>
         </div>
