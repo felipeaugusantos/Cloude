@@ -1248,8 +1248,12 @@ function loadKpiTrendChart() {
           ]
         },
         options: {
+          responsive: true, maintainAspectRatio: false,
           plugins: { legend: { labels: { font: { size: 10 } } } },
-          scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v+'%' } } }
+          scales: {
+            x: { ticks: { maxRotation: 45, font: { size: 9 } } },
+            y: { beginAtZero: true, max: 100, ticks: { callback: v => v+'%' } }
+          }
         }
       });
 
