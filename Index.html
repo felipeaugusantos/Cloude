@@ -287,6 +287,16 @@
       <!-- Mini stats -->
       <div class="row g-3 mb-4">
         <div class="col-sm-6 col-lg-3 col-xl">
+          <div class="mini-stat" style="background:#dc3545" data-bs-toggle="tooltip" data-bs-placement="top" title="Registros sem o campo 'caminho' preenchido — indicam falha de processo ou dado incompleto.">
+            <div>
+              <div class="num" id="rSemCaminho">—</div>
+              <div class="lbl">Sem Caminho Preenchido</div>
+              <div class="badge mt-1 bg-light text-dark" id="rSemCaminhoStatus" style="display:none"></div>
+            </div>
+            <span style="font-size:1.6rem;opacity:.7">⚠️</span>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3 col-xl">
           <div class="mini-stat" style="background:#0d6efd" data-bs-toggle="tooltip" data-bs-placement="top" title="Percentual de registros que possuem uma versão de revisão preenchida.">
             <div>
               <div class="num" id="rTaxaRevisao">—%</div>
@@ -326,28 +336,18 @@
             <span style="font-size:1.6rem;opacity:.7">📆</span>
           </div>
         </div>
-        <div class="col-sm-6 col-lg-3 col-xl">
-          <div class="mini-stat" style="background:#dc3545" data-bs-toggle="tooltip" data-bs-placement="top" title="Registros sem o campo 'caminho' preenchido — indicam falha de processo ou dado incompleto.">
-            <div>
-              <div class="num" id="rSemCaminho">—</div>
-              <div class="lbl">Sem Caminho Preenchido</div>
-              <div class="badge mt-1 bg-light text-dark" id="rSemCaminhoStatus" style="display:none"></div>
-            </div>
-            <span style="font-size:1.6rem;opacity:.7">⚠️</span>
-          </div>
-        </div>
       </div>
 
       <!-- Mini stats — análises refinadas -->
       <div class="row g-3 mb-4">
         <div class="col-sm-6 col-lg-3">
-          <div class="mini-stat" style="background:#20c997" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume do mês atual com o mesmo intervalo de dias do mês anterior — evita distorção de mês incompleto.">
+          <div class="mini-stat" style="background:#0dcaf0" data-bs-toggle="tooltip" data-bs-placement="top" title="Total de registros sem caminho nos últimos 7 dias vs. os 7 dias anteriores — mostra se o problema está melhorando ou piorando.">
             <div>
-              <div class="num" id="rVariacaoMensal">—%</div>
-              <div class="lbl">Volume: Mês Atual vs. Anterior</div>
-              <div class="ctx" id="rVariacaoMensalCtx"></div>
+              <div class="num" id="rSemCaminho7d">— <span id="rSemCaminho7dTrend" style="font-size:1rem"></span></div>
+              <div class="lbl">Sem Caminho — Últimos 7 Dias</div>
+              <div class="ctx" id="rSemCaminho7dCtx"></div>
             </div>
-            <span style="font-size:1.6rem;opacity:.7">📊</span>
+            <span style="font-size:1.6rem;opacity:.7">🔍</span>
           </div>
         </div>
         <div class="col-sm-6 col-lg-3">
@@ -361,7 +361,7 @@
           </div>
         </div>
         <div class="col-sm-6 col-lg-3">
-          <div class="mini-stat" style="background:#0dcaf0" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume de hoje com a média histórica do mesmo dia da semana. Exemplo: segunda-feira de hoje vs. últimas segundas.">
+          <div class="mini-stat" style="background:#20c997" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume de hoje com a média histórica do mesmo dia da semana. Exemplo: segunda-feira de hoje vs. últimas segundas.">
             <div>
               <div class="num" id="rTendenciaSemanal">—%</div>
               <div class="lbl">Hoje vs. Mesmo Dia da Semana</div>

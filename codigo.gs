@@ -611,6 +611,21 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
   const zScoreHoje = stdDev30 ? Math.round(((todayCount-mean30)/stdDev30)*100)/100 : 0;
   const todayKey   = n30 ? trendKeys[n30-1] : Utilities.formatDate(hojeData, tz, "yyyy-MM-dd");
 
+  // Sem caminho por dia — paralelo ao trend30Raw para alimentar o gráfico e o card de 7 dias
+  const semCaminhoPorDia = {};
+  trendKeys.forEach(k => { semCaminhoPorDia[k] = 0; });
+  items.forEach(r => {
+    if ((!r.caminho || !r.caminho.trim()) && semCaminhoPorDia[r.dataOrigem] !== undefined)
+      semCaminhoPorDia[r.dataOrigem]++;
+  });
+  const semCaminhoTrend30 = trendKeys.map(k => semCaminhoPorDia[k]);
+  const scU7 = [], scA7 = [];
+  for (let i = 6; i >= 0; i--) { const d2=new Date(); d2.setDate(d2.getDate()-i); scU7.push(semCaminhoPorDia[Utilities.formatDate(d2,tz,"yyyy-MM-dd")]||0); }
+  for (let i = 13; i >= 7; i--) { const d2=new Date(); d2.setDate(d2.getDate()-i); scA7.push(semCaminhoPorDia[Utilities.formatDate(d2,tz,"yyyy-MM-dd")]||0); }
+  const semCaminho7d      = scU7.reduce((a,b)=>a+b,0);
+  const sumScA7           = scA7.reduce((a,b)=>a+b,0);
+  const semCaminhoTrend7d = sumScA7>0 ? Math.round((semCaminho7d-sumScA7)*100/sumScA7) : (semCaminho7d>0?100:0);
+
   // Previsão dos próximos 7 dias por regressão linear sobre os últimos 30 dias
   let forecast7 = 0;
   if (n30 >= 7) {
@@ -773,6 +788,7 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
     topRevisoes, pareto, taxaRevisao, concentracao, taxaRevisaoGlobal,
     tendencia7, ultimos7: sumU7, anteriores7: sumA7,
     semCaminhoCount: semCaminho, semCaminhoPerc,
+    semCaminho7d, semCaminhoTrend7d, semCaminhoTrend30,
     mesAtualKey, mesAtualTotal, mesAnteriorTotal, variacaoMensal,
     zScoreHoje, mean30: Math.round(mean30*10)/10, stdDev30: Math.round(stdDev30*10)/10,
     tendenciaSemanalAjustada, forecast7,

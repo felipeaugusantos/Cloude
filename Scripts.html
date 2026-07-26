@@ -549,18 +549,25 @@ function renderRelCharts(ch, r) {
     scEl.style.display = scStatus !== 'Normal' ? '' : 'none';
   }
 
-  const vmEl = document.getElementById('rVariacaoMensal');
-  if (vmEl) {
-    const vm = r.variacaoMensal || 0;
-    vmEl.textContent = (vm > 0 ? '▲ +' : vm < 0 ? '▼ ' : '= ') + vm + '%';
+  const sc7El = document.getElementById('rSemCaminho7d');
+  if (sc7El) {
+    sc7El.childNodes[0].nodeValue = (r.semCaminho7d != null ? r.semCaminho7d : '—') + ' ';
+    const sc7Trend = document.getElementById('rSemCaminho7dTrend');
+    if (sc7Trend) {
+      const t7 = r.semCaminhoTrend7d || 0;
+      if (r.semCaminho7d > 0 && t7 !== 0) {
+        sc7Trend.textContent = t7 > 0 ? '▲'+t7+'%' : '▼'+Math.abs(t7)+'%';
+        sc7Trend.className = t7 > 0 ? 'trend-down' : 'trend-up';
+      } else { sc7Trend.textContent = ''; }
+    }
   }
-  setCtx('rVariacaoMensalCtx',
-    (() => { const vm = r.variacaoMensal || 0;
-      return vm > 30 ? 'Crescimento expressivo este mês' :
-             vm > 0  ? 'Leve aumento em relação ao mês anterior' :
-             vm < -30 ? 'Queda expressiva este mês' :
-             vm < 0  ? 'Leve queda em relação ao mês anterior' :
-                       'Volume similar ao mês anterior'; })());
+  setCtx('rSemCaminho7dCtx', (() => {
+    const t7 = r.semCaminhoTrend7d || 0, sc7 = r.semCaminho7d || 0;
+    if (sc7 === 0) return 'Nenhum sem caminho nos últimos 7 dias';
+    return t7 > 20  ? 'Piora em relação à semana anterior' :
+           t7 < -20 ? 'Melhora em relação à semana anterior' :
+                      'Estável vs. semana anterior';
+  })());
 
   const zsEl = document.getElementById('rZScore');
   if (zsEl) {
@@ -629,13 +636,15 @@ function renderRelCharts(ch, r) {
 
   destroyChart('chartTendencia');
   const trendY = ch.trend30.data, trendLine = calcTrendLine(trendY);
+  const scTrend30 = r.semCaminhoTrend30 || [];
   charts.chartTendencia = new Chart(document.getElementById('chartTendencia'), {
     type: 'line',
     data: {
       labels: ch.trend30.labels,
       datasets: [
         { label: 'Cópias', data: trendY, fill: true, tension: .3, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.08)', pointRadius: 3 },
-        { label: 'Tendência', data: trendLine, type: 'line', borderColor: '#dc3545', borderDash: [6,3], pointRadius: 0, tension: 0 },
+        { label: 'Tendência', data: trendLine, type: 'line', borderColor: '#6c757d', borderDash: [6,3], pointRadius: 0, tension: 0 },
+        { label: 'Sem Caminho', data: scTrend30, fill: false, tension: .3, borderColor: '#dc3545', backgroundColor: 'transparent', pointRadius: 2, borderWidth: 1.5 },
       ]
     },
     plugins: [makePointLabelPlugin(0, { color: '#0d6efd', step: 3 })],
