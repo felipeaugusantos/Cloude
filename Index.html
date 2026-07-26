@@ -290,25 +290,28 @@
           <div class="mini-stat" style="background:#0d6efd" data-bs-toggle="tooltip" data-bs-placement="top" title="Percentual de registros que possuem uma versão de revisão preenchida.">
             <div>
               <div class="num" id="rTaxaRevisao">—%</div>
-              <div class="lbl">Taxa de Revisão</div>
+              <div class="lbl">Registros com Revisão</div>
+              <div class="ctx" id="rTaxaRevisaoCtx"></div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">🔄</span>
           </div>
         </div>
         <div class="col-sm-6 col-lg-3 col-xl">
-          <div class="mini-stat" style="background:#6610f2" data-bs-toggle="tooltip" data-bs-placement="top" title="Percentual do volume total concentrado nos 3 clientes com mais registros.">
+          <div class="mini-stat" style="background:#6610f2" data-bs-toggle="tooltip" data-bs-placement="top" title="Percentual do volume total concentrado nos 3 clientes com mais registros. Acima de 70% indica dependência excessiva.">
             <div>
               <div class="num" id="rConcentracao">—%</div>
-              <div class="lbl">Concentração Top 3</div>
+              <div class="lbl">Top 3 Clientes — % do Volume</div>
+              <div class="ctx" id="rConcentracaoCtx"></div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">🎯</span>
           </div>
         </div>
         <div class="col-sm-6 col-lg-3 col-xl">
-          <div class="mini-stat" style="background:#198754" data-bs-toggle="tooltip" data-bs-placement="top" title="Total de registros nos últimos 7 dias, com variação percentual em relação aos 7 dias anteriores.">
+          <div class="mini-stat" style="background:#198754" data-bs-toggle="tooltip" data-bs-placement="top" title="Total de registros nos últimos 7 dias vs. os 7 dias anteriores.">
             <div>
               <div class="num" id="rUltimos7">— <span id="rTendencia7" style="font-size:1rem"></span></div>
-              <div class="lbl">Últimos 7 Dias</div>
+              <div class="lbl">Cópias nos Últimos 7 Dias</div>
+              <div class="ctx" id="rUltimos7Ctx"></div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">📅</span>
           </div>
@@ -317,7 +320,8 @@
           <div class="mini-stat" style="background:#fd7e14" data-bs-toggle="tooltip" data-bs-placement="top" title="Total de registros do mês corrente, até a data de hoje.">
             <div>
               <div class="num" id="rMesAtual">—</div>
-              <div class="lbl">Mês Atual</div>
+              <div class="lbl">Cópias no Mês Atual</div>
+              <div class="ctx" id="rMesAtualCtx"></div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">📆</span>
           </div>
@@ -326,7 +330,7 @@
           <div class="mini-stat" style="background:#dc3545" data-bs-toggle="tooltip" data-bs-placement="top" title="Registros sem o campo 'caminho' preenchido — indicam falha de processo ou dado incompleto.">
             <div>
               <div class="num" id="rSemCaminho">—</div>
-              <div class="lbl">Sem Caminho</div>
+              <div class="lbl">Sem Caminho Preenchido</div>
               <div class="badge mt-1 bg-light text-dark" id="rSemCaminhoStatus" style="display:none"></div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">⚠️</span>
@@ -337,37 +341,41 @@
       <!-- Mini stats — análises refinadas -->
       <div class="row g-3 mb-4">
         <div class="col-sm-6 col-lg-3">
-          <div class="mini-stat" style="background:#20c997" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume do mês atual com o mesmo intervalo de dias do mês anterior (evita distorção de mês incompleto).">
+          <div class="mini-stat" style="background:#20c997" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume do mês atual com o mesmo intervalo de dias do mês anterior — evita distorção de mês incompleto.">
             <div>
               <div class="num" id="rVariacaoMensal">—%</div>
-              <div class="lbl">Comparativo Mensal (vs. mês anterior)</div>
+              <div class="lbl">Volume: Mês Atual vs. Anterior</div>
+              <div class="ctx" id="rVariacaoMensalCtx"></div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">📊</span>
           </div>
         </div>
         <div class="col-sm-6 col-lg-3">
-          <div class="mini-stat" style="background:#d63384" data-bs-toggle="tooltip" data-bs-placement="top" title="Quantos desvios-padrão o volume de hoje está da média dos últimos 30 dias. Valores absolutos acima de 2 indicam anomalia estatística.">
+          <div class="mini-stat" style="background:#d63384" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume de hoje com a média dos últimos 30 dias. Acima de 2 = volume anormalmente alto. Abaixo de -2 = volume anormalmente baixo.">
             <div>
               <div class="num" id="rZScore">—</div>
-              <div class="lbl">Anomalia do Dia (z-score)</div>
+              <div class="lbl">Volume de Hoje vs. Média 30d</div>
+              <div class="ctx" id="rZScoreCtx"></div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">📡</span>
           </div>
         </div>
         <div class="col-sm-6 col-lg-3">
-          <div class="mini-stat" style="background:#0dcaf0" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume de hoje com a média histórica do mesmo dia da semana nos últimos 30 dias.">
+          <div class="mini-stat" style="background:#0dcaf0" data-bs-toggle="tooltip" data-bs-placement="top" title="Compara o volume de hoje com a média histórica do mesmo dia da semana. Exemplo: segunda-feira de hoje vs. últimas segundas.">
             <div>
               <div class="num" id="rTendenciaSemanal">—%</div>
-              <div class="lbl">Tendência Ajustada por Dia da Semana</div>
+              <div class="lbl">Hoje vs. Mesmo Dia da Semana</div>
+              <div class="ctx" id="rTendenciaSemanalCtx"></div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">🗓️</span>
           </div>
         </div>
         <div class="col-sm-6 col-lg-3">
-          <div class="mini-stat" style="background:#6f42c1" data-bs-toggle="tooltip" data-bs-placement="top" title="Média diária prevista para os próximos 7 dias, calculada por regressão linear sobre os últimos 30 dias de volume.">
+          <div class="mini-stat" style="background:#6f42c1" data-bs-toggle="tooltip" data-bs-placement="top" title="Média diária prevista para os próximos 7 dias, calculada por regressão linear sobre os últimos 30 dias.">
             <div>
               <div class="num" id="rForecast7">— /dia</div>
-              <div class="lbl">Previsão Próximos 7 Dias</div>
+              <div class="lbl">Previsão — Próximos 7 Dias</div>
+              <div class="ctx" id="rForecast7Ctx"></div>
             </div>
             <span style="font-size:1.6rem;opacity:.7">🔮</span>
           </div>

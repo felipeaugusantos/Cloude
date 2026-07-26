@@ -26,6 +26,7 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function setText(id, val) { document.getElementById(id).textContent = val; }
+function setCtx(id, val) { const el = document.getElementById(id); if (el) el.textContent = val || ''; }
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
 
 function isValidNumericValue(v) {
@@ -506,22 +507,44 @@ function makePointLabelPlugin(dsIndex, opts) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 function renderRelCharts(ch, r) {
-  document.getElementById('rTaxaRevisao').textContent =
-    r.taxaRevisaoGlobal !== undefined ? r.taxaRevisaoGlobal + '%' : '—%';
+  const tr = r.taxaRevisaoGlobal !== undefined ? r.taxaRevisaoGlobal : null;
+  document.getElementById('rTaxaRevisao').textContent = tr !== null ? tr + '%' : '—%';
+  setCtx('rTaxaRevisaoCtx',
+    tr === null ? '' :
+    tr >= 40 ? 'Alto — monitorar causas' :
+    tr >= 15 ? 'Dentro do esperado' :
+               'Baixo — poucos registros revisados');
+
   document.getElementById('rConcentracao').textContent = r.concentracao + '%';
+  setCtx('rConcentracaoCtx',
+    r.concentracao >= 70 ? 'Base muito concentrada — risco de dependência' :
+    r.concentracao >= 50 ? 'Concentração moderada' :
+                           'Base bem distribuída entre clientes');
+
   document.getElementById('rUltimos7').childNodes[0].nodeValue = r.ultimos7 + ' ';
   const tEl = document.getElementById('rTendencia7');
   if (r.tendencia7 > 0)      { tEl.textContent = '▲'+r.tendencia7+'%'; tEl.className = 'trend-up'; }
   else if (r.tendencia7 < 0) { tEl.textContent = '▼'+Math.abs(r.tendencia7)+'%'; tEl.className = 'trend-down'; }
   else                       { tEl.textContent = '='; tEl.className = 'trend-eq'; }
+  setCtx('rUltimos7Ctx',
+    r.tendencia7 > 15  ? 'Crescimento vs. semana anterior' :
+    r.tendencia7 < -15 ? 'Queda vs. semana anterior' :
+                         'Estável vs. semana anterior');
+
   const mesAtualIdx = r.mensal.labels.indexOf(r.mesAtualKey);
-  document.getElementById('rMesAtual').textContent = mesAtualIdx >= 0 ? r.mensal.data[mesAtualIdx] : 0;
+  const mesVal = mesAtualIdx >= 0 ? r.mensal.data[mesAtualIdx] : 0;
+  document.getElementById('rMesAtual').textContent = mesVal;
+  const vm0 = r.variacaoMensal || 0;
+  setCtx('rMesAtualCtx',
+    vm0 > 0 ? vm0 + '% acima do mês anterior' :
+    vm0 < 0 ? Math.abs(vm0) + '% abaixo do mês anterior' :
+              'Igual ao mês anterior');
+
   document.getElementById('rSemCaminho').textContent = r.semCaminhoCount + ' (' + r.semCaminhoPerc + '%)';
   const scEl = document.getElementById('rSemCaminhoStatus');
   if (scEl) {
     const scStatus = r.semCaminhoPerc >= 10 ? 'Crítico' : r.semCaminhoPerc >= 5 ? 'Atenção' : 'Normal';
     scEl.textContent = scStatus;
-    // bg-light text-dark mantém contraste dentro do mini-stat vermelho (bg-danger confundia com o fundo)
     scEl.className = 'badge mt-1 bg-light text-dark';
     scEl.style.display = scStatus !== 'Normal' ? '' : 'none';
   }
@@ -531,22 +554,43 @@ function renderRelCharts(ch, r) {
     const vm = r.variacaoMensal || 0;
     vmEl.textContent = (vm > 0 ? '▲ +' : vm < 0 ? '▼ ' : '= ') + vm + '%';
   }
+  setCtx('rVariacaoMensalCtx',
+    (() => { const vm = r.variacaoMensal || 0;
+      return vm > 30 ? 'Crescimento expressivo este mês' :
+             vm > 0  ? 'Leve aumento em relação ao mês anterior' :
+             vm < -30 ? 'Queda expressiva este mês' :
+             vm < 0  ? 'Leve queda em relação ao mês anterior' :
+                       'Volume similar ao mês anterior'; })());
+
   const zsEl = document.getElementById('rZScore');
   if (zsEl) {
     const z = r.zScoreHoje || 0;
     zsEl.textContent = z.toFixed(2);
     zsEl.className = 'num ' + (Math.abs(z) >= 2.5 ? 'text-danger' : Math.abs(z) >= 1.5 ? 'text-warning' : '');
   }
+  setCtx('rZScoreCtx',
+    (() => { const z = r.zScoreHoje || 0;
+      return Math.abs(z) >= 2.5 ? (z > 0 ? 'Volume anormalmente alto hoje' : 'Volume anormalmente baixo hoje') :
+             Math.abs(z) >= 1.5 ? (z > 0 ? 'Volume acima do padrão histórico' : 'Volume abaixo do padrão histórico') :
+                                   'Volume dentro do padrão histórico'; })());
+
   const tsEl = document.getElementById('rTendenciaSemanal');
   if (tsEl) {
     const ts = r.tendenciaSemanalAjustada || 0;
     tsEl.textContent = (ts > 0 ? '▲ +' : ts < 0 ? '▼ ' : '= ') + ts + '%';
   }
+  setCtx('rTendenciaSemanalCtx',
+    (() => { const ts = r.tendenciaSemanalAjustada || 0;
+      return ts > 20  ? 'Hoje acima do esperado para este dia' :
+             ts < -20 ? 'Hoje abaixo do esperado para este dia' :
+                        'Volume típico para este dia da semana'; })());
+
   const fcEl = document.getElementById('rForecast7');
   if (fcEl) {
     const fc = r.forecast7 != null ? r.forecast7 : 0;
     fcEl.textContent = fc ? '~' + fc + '/dia' : '— /dia';
   }
+  setCtx('rForecast7Ctx', r.forecast7 ? 'Baseado nos últimos 30 dias' : '');
 
   renderRiskMatrix(r.riskMatrix || []);
   renderVersaoQuality(r.byVersaoQuality || []);

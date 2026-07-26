@@ -781,17 +781,17 @@ function buildReports_(items, cliTotalMap, trend30Raw, tz) {
   if (semCaminho > 0) bullets.push(semCaminhoPerc + "% dos registros estão sem caminho (" + semCaminho + " de " + total + ").");
   if (concentracao >= 50) bullets.push("Os 3 maiores clientes concentram " + concentracao + "% do volume.");
   if (Math.abs(zScoreHoje) >= 1.5) bullets.push("Hoje está " + (zScoreHoje > 0 ? "acima" : "abaixo") + " do padrão histórico dos últimos 30 dias (z-score " + zScoreHoje + ").");
-  if (criticalClients[0]) bullets.push(criticalClients[0].cliente + " é o principal ponto de atenção entre os clientes (" + criticalClients[0].reason.toLowerCase() + ").");
-  else if (attentionClients[0]) bullets.push(attentionClients[0].cliente + " merece monitoramento entre os clientes (" + attentionClients[0].reason.toLowerCase() + ").");
-  if (criticalVersions[0]) bullets.push("A versão " + criticalVersions[0].versao + " apresenta o maior risco de qualidade (" + criticalVersions[0].reason + ").");
+  if (criticalClients[0]) bullets.push(criticalClients[0].cliente + " é o cliente com maior risco no período (" + criticalClients[0].semCaminhoPerc + "% sem caminho, score " + criticalClients[0].score + ").");
+  else if (attentionClients[0]) bullets.push(attentionClients[0].cliente + " merece monitoramento (" + attentionClients[0].semCaminhoPerc + "% sem caminho, score " + attentionClients[0].score + ").");
+  if (criticalVersions[0]) bullets.push("A versão " + criticalVersions[0].versao + " apresenta maior risco de qualidade (" + criticalVersions[0].semCaminhoPerc + "% sem caminho).");
   if (Math.abs(variacaoMensal) >= 30) bullets.push("O volume deste mês está " + (variacaoMensal>0?"+":"") + variacaoMensal + "% em relação ao mesmo intervalo do mês anterior.");
   if (!bullets.length) bullets.push("Nenhum desvio relevante foi identificado para o período filtrado.");
 
   let mainAction = "Nenhuma ação prioritária identificada — manter monitoramento de rotina.";
-  if (criticalClients.length) mainAction = "Regularizar pendências de " + criticalClients[0].cliente + " (" + criticalClients[0].reason.toLowerCase() + ").";
-  else if (criticalVersions.length) mainAction = "Investigar a versão " + criticalVersions[0].versao + " (" + criticalVersions[0].reason + ").";
-  else if (semCaminhoPerc >= 5) mainAction = "Regularizar os " + semCaminho + " registro(s) sem caminho.";
-  else if (attentionClients.length) mainAction = "Monitorar " + attentionClients[0].cliente + " (" + attentionClients[0].reason.toLowerCase() + ").";
+  if (criticalClients.length) mainAction = "Regularizar pendências de " + criticalClients[0].cliente + " — " + criticalClients[0].semCaminhoPerc + "% dos registros sem caminho.";
+  else if (criticalVersions.length) mainAction = "Investigar a versão " + criticalVersions[0].versao + " — " + criticalVersions[0].semCaminhoPerc + "% sem caminho.";
+  else if (semCaminhoPerc >= 5) mainAction = "Regularizar os " + semCaminho + " registro(s) sem caminho preenchido.";
+  else if (attentionClients.length) mainAction = "Monitorar " + attentionClients[0].cliente + " — score de risco " + attentionClients[0].score + ".";
 
   const executiveSummary = {
     status: summaryStatus, statusLevel: summaryLevel, headline,
