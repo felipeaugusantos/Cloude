@@ -658,9 +658,31 @@
           </div>
 
           <!-- Trend chart -->
-          <div class="card kpi-card p-3">
+          <div class="card kpi-card p-3 mb-3">
             <h6 class="card-title text-muted mb-2">Tendência — Últimas Sessões (% Conferido vs % Abe+And)</h6>
             <canvas id="chartKpiTrend" height="100"></canvas>
+          </div>
+
+          <!-- Volume por sessão -->
+          <div class="card kpi-card p-3 mb-3">
+            <h6 class="card-title text-muted mb-2">Volume Total por Sessão de Fechamento</h6>
+            <div style="height:120px"><canvas id="chartKpiVolume"></canvas></div>
+          </div>
+
+          <!-- Composição absoluta + Semáforo -->
+          <div class="row g-3">
+            <div class="col-md-7">
+              <div class="card kpi-card p-3">
+                <h6 class="card-title text-muted mb-2">Composição por Status — Evolução Absoluta</h6>
+                <div style="height:160px"><canvas id="chartKpiAbsoluto"></canvas></div>
+              </div>
+            </div>
+            <div class="col-md-5">
+              <div class="card kpi-card p-3">
+                <h6 class="card-title text-muted mb-2">Evolução do Semáforo por Sessão</h6>
+                <div style="height:160px"><canvas id="chartKpiSemaforo"></canvas></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

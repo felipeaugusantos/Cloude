@@ -1252,6 +1252,62 @@ function loadKpiTrendChart() {
           scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v+'%' } } }
         }
       });
+
+      // ── Volume total por sessão ───────────────────────────────────────────
+      destroyChart('chartKpiVolume');
+      charts.chartKpiVolume = new Chart(document.getElementById('chartKpiVolume'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{ label: 'Total', data: resp.trend.map(t=>t.total||0),
+            backgroundColor: '#0d6efd', borderRadius: 4 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+
+      // ── Composição por status — valores absolutos ─────────────────────────
+      destroyChart('chartKpiAbsoluto');
+      charts.chartKpiAbsoluto = new Chart(document.getElementById('chartKpiAbsoluto'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Aberta',     data: resp.trend.map(t=>t.aberta||0),     backgroundColor:'#dc3545', borderWidth:0 },
+            { label: 'Andamento',  data: resp.trend.map(t=>t.andamento||0),  backgroundColor:'#fd7e14', borderWidth:0 },
+            { label: 'Corrigindo', data: resp.trend.map(t=>t.corrigindo||0), backgroundColor:'#ffc107', borderWidth:0 },
+            { label: 'Corrigido',  data: resp.trend.map(t=>t.corrigido||0),  backgroundColor:'#0dcaf0', borderWidth:0 },
+            { label: 'Conferido',  data: resp.trend.map(t=>t.conferido||0),  backgroundColor:'#198754', borderWidth:0 },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { font: { size: 10 }, boxWidth: 10 } } },
+          scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
+        }
+      });
+
+      // ── Evolução do semáforo por sessão ───────────────────────────────────
+      destroyChart('chartKpiSemaforo');
+      charts.chartKpiSemaforo = new Chart(document.getElementById('chartKpiSemaforo'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Vermelho', data: resp.trend.map(t=>t.vermelho||0), backgroundColor:'#dc3545', borderWidth:0 },
+            { label: 'Amarelo',  data: resp.trend.map(t=>t.amarelo||0),  backgroundColor:'#ffc107', borderWidth:0 },
+            { label: 'Verde',    data: resp.trend.map(t=>t.verde||0),    backgroundColor:'#198754', borderWidth:0 },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { font: { size: 10 }, boxWidth: 10 } } },
+          scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+      });
     })
     .withFailureHandler(err => showSystemMsg('warning', 'Erro ao carregar tendência KPI: ' + err.message))
     .getKPITrendData();

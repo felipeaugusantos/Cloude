@@ -1420,21 +1420,37 @@ function getKPITrendData() {
       });
     });
 
-    const last10 = sessRes.sessions
+    const last20 = sessRes.sessions
       .filter(s => String(s.status || "SUCESSO").toUpperCase() === "SUCESSO")
-      .slice(0, 10)
+      .slice(0, 20)
       .reverse();
     const trend  = [];
 
-    for (const sess of last10) {
+    for (const sess of last20) {
       const sessRows = byKey[sess.id] || byKey[sess.ts] || [];
       const totalRow = sessRows.find(r => r.ALT_VERSAO === "TOTAL GERAL");
       if (!totalRow) continue;
+      const versionRows = sessRows.filter(r => r.ALT_VERSAO !== "TOTAL GERAL");
+      let verde = 0, amarelo = 0, vermelho = 0;
+      versionRows.forEach(r => {
+        const sems = [r.SEMAFORO_ABERTA_ANDAMENTO, r.SEMAFORO_CORRIGINDO_CORRIGIDO, r.SEMAFORO_CONFERIDO]
+          .map(v => (v||"").toUpperCase());
+        if (sems.includes("VERMELHO")) vermelho++;
+        else if (sems.includes("AMARELO")) amarelo++;
+        else verde++;
+      });
       trend.push({
         ts:            sess.ts,
-        conferidoPerc: totalRow.KPI_CONFERIDO          || 0,
-        abeAndPerc:    totalRow.KPI_ABERTA_ANDAMENTO   || 0,
-        corrCorrPerc:  totalRow.KPI_CORRIGINDO_CORRIGIDO || 0,
+        conferidoPerc: totalRow.KPI_CONFERIDO             || 0,
+        abeAndPerc:    totalRow.KPI_ABERTA_ANDAMENTO      || 0,
+        corrCorrPerc:  totalRow.KPI_CORRIGINDO_CORRIGIDO  || 0,
+        total:         totalRow.TOTAL      || 0,
+        conferido:     totalRow.CONFERIDO  || 0,
+        corrigido:     totalRow.CORRIGIDO  || 0,
+        corrigindo:    totalRow.CORRIGINDO || 0,
+        andamento:     totalRow.ANDAMENTO  || 0,
+        aberta:        totalRow.ABERTA     || 0,
+        verde, amarelo, vermelho,
       });
     }
 
