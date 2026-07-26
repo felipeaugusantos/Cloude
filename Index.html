@@ -540,7 +540,8 @@
           <!-- Session history -->
           <div class="card kpi-card p-3">
             <h6 class="fw-semibold mb-2">📋 Histórico de Sessões</h6>
-            <div id="sessionList" style="max-height:300px;overflow-y:auto"></div>
+            <div id="kpiSemSummary" class="small mb-2"></div>
+            <div id="sessionList" style="max-height:280px;overflow-y:auto"></div>
           </div>
         </div>
 
@@ -559,18 +560,21 @@
               <div class="kpi-summary-card" style="background:#198754">
                 <div class="val" id="kpiConferido">—%</div>
                 <div class="lbl">% Conferido</div>
+                <div id="kpiConf-sem"></div>
               </div>
             </div>
             <div class="col-6 col-xl-3">
               <div class="kpi-summary-card" style="background:#dc3545">
                 <div class="val" id="kpiAbeAnd">—%</div>
                 <div class="lbl">% Abe + And</div>
+                <div id="kpiAbeAnd-sem"></div>
               </div>
             </div>
             <div class="col-6 col-xl-3">
               <div class="kpi-summary-card" style="background:#6610f2">
                 <div class="val" id="kpiCorrCorrd">—%</div>
                 <div class="lbl">% Corr + Corrd</div>
+                <div id="kpiCorrCorrd-sem"></div>
               </div>
             </div>
           </div>
@@ -585,11 +589,17 @@
           <div class="card kpi-card mb-3">
             <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
               <span class="fw-semibold small" id="kpiSessionLabel">Última Sessão</span>
-              <span class="badge bg-secondary" id="kpiSessionTime"></span>
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-secondary" id="kpiSessionTime"></span>
+                <button class="btn btn-outline-light btn-sm py-0 px-2" onclick="exportKpiCSV()" title="Exportar CSV da sessão atual">⬇ CSV</button>
+              </div>
             </div>
             <div class="card-body border-bottom py-2">
-              <input type="text" id="kpiVersionFilter" class="form-control form-control-sm"
-                placeholder="Filtrar por versão..." oninput="applyKpiVersionFilter()" style="max-width:260px">
+              <div class="d-flex align-items-center gap-2">
+                <input type="text" id="kpiVersionFilter" class="form-control form-control-sm"
+                  placeholder="Filtrar por versão..." oninput="applyKpiVersionFilter()" style="max-width:220px">
+                <button class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="clearKpiVersionFilter()" title="Limpar filtro">✕</button>
+              </div>
             </div>
             <div class="card-body p-0">
               <div class="table-responsive" style="max-height:400px;overflow-y:auto">

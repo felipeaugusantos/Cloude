@@ -1377,6 +1377,24 @@ function getKPITrendData() {
   }
 }
 
+function exportKPICSV() {
+  try {
+    assertAuthorized_("exportKPICSV");
+    const res = getLastKPI();
+    if (!res.ok) return { ok: false, error: res.error };
+    const data = res.data || [];
+    if (!data.length) return { ok: false, error: 'Nenhum dado disponível para exportar.' };
+    const cols = ['ALT_VERSAO','ABERTA','ANDAMENTO','CORRIGINDO','CORRIGIDO','CONFERIDO','TOTAL',
+                  'KPI_ABERTA_ANDAMENTO','KPI_CORRIGINDO_CORRIGIDO','KPI_CONFERIDO',
+                  'SEMAFORO_ABERTA_ANDAMENTO','SEMAFORO_CORRIGINDO_CORRIGIDO','SEMAFORO_CONFERIDO'];
+    const esc = v => (v == null ? '' : '"' + String(v).replace(/"/g, '""') + '"');
+    const lines = [cols.map(esc).join(',')].concat(data.map(r => cols.map(c => esc(r[c])).join(',')));
+    return { ok: true, csv: lines.join('\r\n') };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 // ─── Administração de Acessos ─────────────────────────────────────────────────
 function isAdminUser_(email) {
   if (!email) return false;

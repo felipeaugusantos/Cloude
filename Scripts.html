@@ -279,7 +279,14 @@ function riskClass(level) {
 function classifySemCaminho(perc) {
   return perc >= 10 ? 'Crítico' : perc >= 5 ? 'Atenção' : 'Normal';
 }
-const TOTAL_ROW_KEY = TOTAL_ROW_KEY;
+const TOTAL_ROW_KEY = 'TOTAL GERAL';
+function worstSem(r) {
+  const s = [r.SEMAFORO_ABERTA_ANDAMENTO, r.SEMAFORO_CORRIGINDO_CORRIGIDO, r.SEMAFORO_CONFERIDO]
+    .map(v => (v||'').toUpperCase());
+  if (s.includes('VERMELHO')) return 'VERMELHO';
+  if (s.includes('AMARELO')) return 'AMARELO';
+  return 'VERDE';
+}
 function setPreset(p) {
   const today = new Date().toISOString().substring(0, 10);
   const de = document.getElementById('fDe'), ate = document.getElementById('fAte');
@@ -995,9 +1002,13 @@ function renderSessionList(sessions) {
   const el = document.getElementById('sessionList');
   if (!sessions.length) { el.innerHTML = '<p class="text-muted small">Sem histórico</p>'; return; }
   el.innerHTML = sessions.map((s, i) => {
-    const statusBadgeHtml = (s.status && s.status !== 'SUCESSO')
-      ? '<span class="badge bg-danger ms-1">ERRO</span>'
-      : '<span class="badge bg-secondary ms-1">' + (s.count||0) + ' reg.</span>';
+    const isErr = s.status && s.status !== 'SUCESSO';
+    const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' +
+      (isErr ? '#dc3545' : '#198754') + ';flex-shrink:0;margin-right:4px" title="' +
+      (isErr ? 'ERRO' : 'SUCESSO') + '"></span>';
+    const statusBadgeHtml = isErr
+      ? dot + '<span class="badge bg-danger ms-1">ERRO</span>'
+      : dot + '<span class="badge bg-secondary ms-1">' + (s.count||0) + ' reg.</span>';
     const origemTag = (s.origem && s.origem !== 'LEGADO' && s.origem !== 'MANUAL')
       ? '<span class="badge bg-info text-dark ms-1" style="font-size:.6rem">' + esc(s.origem) + '</span>'
       : (s.origem === 'LEGADO' ? '<span class="badge bg-secondary ms-1" style="font-size:.6rem;opacity:.6">legado</span>' : '');
@@ -1034,6 +1045,13 @@ function viewSessionEl(el) {
     .getKPIDataBySession(sid);
 }
 
+function semBadge(s) {
+  if (!s) return '';
+  const u = s.toUpperCase();
+  const map = { VERDE: ['#198754','VERDE ●'], AMARELO: ['#fd7e14','AMARELO ●'], VERMELHO: ['#dc3545','VERMELHO ●'] };
+  const [bg, label] = map[u] || ['#6c757d', s];
+  return '<span style="display:inline-block;background:' + bg + ';color:#fff;border-radius:999px;padding:1px 8px;font-size:.6rem;font-weight:700;letter-spacing:.04em;margin-top:4px">' + label + '</span>';
+}
 function updateKpiSummaryCards(data) {
   const tg = data.find(r => r.ALT_VERSAO === TOTAL_ROW_KEY);
   if (!tg) return;
@@ -1041,6 +1059,26 @@ function updateKpiSummaryCards(data) {
   document.getElementById('kpiConferido').textContent = (tg.KPI_CONFERIDO != null ? tg.KPI_CONFERIDO.toFixed(1) : '—') + '%';
   document.getElementById('kpiAbeAnd').textContent    = (tg.KPI_ABERTA_ANDAMENTO != null ? tg.KPI_ABERTA_ANDAMENTO.toFixed(1) : '—') + '%';
   document.getElementById('kpiCorrCorrd').textContent = (tg.KPI_CORRIGINDO_CORRIGIDO != null ? tg.KPI_CORRIGINDO_CORRIGIDO.toFixed(1) : '—') + '%';
+  ['kpiConf-sem','kpiAbeAnd-sem','kpiCorrCorrd-sem'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.innerHTML = '';
+  });
+  const confSem = document.getElementById('kpiConf-sem');
+  const abeSem  = document.getElementById('kpiAbeAnd-sem');
+  const corSem  = document.getElementById('kpiCorrCorrd-sem');
+  if (confSem) confSem.innerHTML = semBadge(tg.SEMAFORO_CONFERIDO);
+  if (abeSem)  abeSem.innerHTML  = semBadge(tg.SEMAFORO_ABERTA_ANDAMENTO);
+  if (corSem)  corSem.innerHTML  = semBadge(tg.SEMAFORO_CORRIGINDO_CORRIGIDO);
+  // Sem resumo by version rows
+  const vRows = data.filter(r => r.ALT_VERSAO !== TOTAL_ROW_KEY);
+  const semCount = { VERDE: 0, AMARELO: 0, VERMELHO: 0 };
+  vRows.forEach(r => { const w = worstSem(r); semCount[w] = (semCount[w]||0) + 1; });
+  const sumEl = document.getElementById('kpiSemSummary');
+  if (sumEl) {
+    sumEl.innerHTML =
+      '<span style="color:#198754;font-weight:700">● ' + semCount.VERDE + ' VERDE</span>' +
+      (semCount.AMARELO ? ' &nbsp;<span style="color:#fd7e14;font-weight:700">● ' + semCount.AMARELO + ' AMARELO</span>' : '') +
+      (semCount.VERMELHO ? ' &nbsp;<span style="color:#dc3545;font-weight:700">● ' + semCount.VERMELHO + ' VERMELHO</span>' : '');
+  }
 }
 
 function renderKPITableData(data) {
@@ -1061,7 +1099,9 @@ function renderKPITableData(data) {
 
   function makeRow(r) {
     const hasCorrCorrd = r.KPI_CORRIGINDO_CORRIGIDO != null;
-    return '<tr>' +
+    const ws = worstSem(r);
+    const rowCls = ws === 'VERMELHO' ? ' class="table-danger"' : ws === 'AMARELO' ? ' class="table-warning"' : '';
+    return '<tr' + rowCls + '>' +
       '<td><strong>' + esc(r.ALT_VERSAO) + '</strong></td>' +
       '<td>' + r.ABERTA + '</td><td>' + r.ANDAMENTO + '</td>' +
       '<td>' + r.CORRIGINDO + '</td><td>' + r.CORRIGIDO + '</td>' +
@@ -1105,6 +1145,7 @@ function loadKpiTrendChart() {
       if (!resp || !resp.ok || !resp.trend.length) return;
       destroyChart('chartKpiTrend');
       const labels = resp.trend.map(t => t.ts.substring(5,16));
+      const meta80 = Array(labels.length).fill(80);
       charts.chartKpiTrend = new Chart(document.getElementById('chartKpiTrend'), {
         type: 'line',
         data: {
@@ -1116,6 +1157,9 @@ function loadKpiTrendChart() {
               borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,.1)', tension: .3, fill: true, pointRadius: 4 },
             { label: '% Corr+Corrd', data: resp.trend.map(t=>t.corrCorrPerc),
               borderColor: '#6610f2', backgroundColor: 'rgba(102,16,242,.05)', tension: .3, fill: false, pointRadius: 4, borderDash: [4,3] },
+            { label: 'Meta 80%', data: meta80,
+              borderColor: '#fd7e14', borderDash: [6,4], borderWidth: 1.5,
+              pointRadius: 0, fill: false, tension: 0 },
           ]
         },
         options: {
@@ -1451,6 +1495,24 @@ function applyKpiVersionFilter() {
   document.querySelectorAll('#kpiTBody tr').forEach(tr => {
     tr.style.display = (!q || tr.cells[0].textContent.toLowerCase().includes(q)) ? '' : 'none';
   });
+}
+function clearKpiVersionFilter() {
+  document.getElementById('kpiVersionFilter').value = '';
+  applyKpiVersionFilter();
+}
+
+function exportKpiCSV() {
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (!resp || !resp.ok) { showSystemMsg('danger', 'Erro ao exportar: ' + (resp ? resp.error : 'sem resposta')); return; }
+      const a = document.createElement('a');
+      const blob = new Blob([resp.csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      a.href = url; a.download = 'kpi_' + new Date().toISOString().substring(0,10) + '.csv';
+      a.click(); URL.revokeObjectURL(url);
+    })
+    .withFailureHandler(err => showSystemMsg('danger', 'Erro ao exportar KPI: ' + err.message))
+    .exportKPICSV();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
