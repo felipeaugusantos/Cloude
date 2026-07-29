@@ -1,0 +1,14 @@
+{
+  "autcom_exe": "autcom.exe",
+  "bat_nome": "atualizar.bat",
+  "usuarios": [
+    {
+      "nome": "Felipe.santos",
+      "pasta": "C:\\Felipe.santos\\Autpas"
+    },
+    {
+      "nome": "Aline.pizzo",
+      "pasta": "C:\\Aline.pizzo\\Autpas"
+    }
+  ]
+}

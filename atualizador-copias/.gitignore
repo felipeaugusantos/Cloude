@@ -1,0 +1,11 @@
+# Config real com caminhos das maquinas (nao versionar)
+config.json
+
+# Artefatos do PyInstaller
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
